@@ -44,6 +44,7 @@
     <link rel="stylesheet" type="text/css" href="css/mobile-styles.css">
     <link rel="stylesheet" type="text/css" href="css/macros.css">
     <link rel="stylesheet" type="text/css" href="css/user.css">
+    <link rel="stylesheet" type="text/css" href="css/consumer-shell.css">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <!-- Scripts are loaded at the end of the body to improve page load speed -->
 </head>
@@ -6061,6 +6062,7 @@
                                                 <div id="world_button" class="menu_button fa-solid fa-globe" title="Character Lore&#10;&#10;Click to load&#10;Shift/Alt-click or long-press to open 'Link to World Info' popup" data-i18n="[title]world_button_title"></div>
                                                 <div class="chat_lorebook_button menu_button fa-solid fa-passport" title="Chat Lore&#10;&#10;Click to load&#10;Shift/Alt-click or long-press to open 'Link to Chat Lorebook' popup" data-i18n="[title]chat_lorebook_button_title"></div>
                                                 <div id="char_connections_button" class="menu_button fa-solid fa-face-smile" title="Connected Personas" data-i18n="[title]Connected Personas"></div>
+                                                <div id="consumer_media_button" class="menu_button fa-solid fa-images" title="Manage Character Images" data-i18n="[title]Manage Character Images"></div>
                                                 <div id="export_button" class="menu_button fa-solid fa-file-export " title="Export and Download" data-i18n="[title]Export and Download"></div>
                                                 <!-- <div id="set_chat_character_settings" class="menu_button fa-solid fa-scroll" title="Set a chat scenario override"></div> -->
                                                 <!-- <div id="set_character_world" class="menu_button fa-solid fa-globe" title="Set a character World Info / Lorebook"></div> -->
@@ -6122,6 +6124,20 @@
                                     </div>
                                 </div>
                             </div>
+                            <section id="consumer_editor_media" class="consumer-editor-media" aria-label="角色视觉资产">
+                                <div class="consumer-editor-media-heading">
+                                    <div>
+                                        <strong>角色视觉资产</strong>
+                                        <small>添加多张图片，设置封面并调整画廊顺序</small>
+                                    </div>
+                                    <label class="consumer-editor-upload">
+                                        <i class="fa-solid fa-plus"></i>
+                                        <span>添加图片</span>
+                                        <input type="file" data-consumer-editor-media-input accept="image/*" multiple>
+                                    </label>
+                                </div>
+                                <div class="consumer-editor-media-list" data-consumer-editor-media-list></div>
+                            </section>
                             <div id="spoiler_free_desc" class="inline-drawer flex-container flexFlowColumn flexNoGap">
                                 <div class="inline-drawer-toggle inline-drawer-header padding0 gap5px standoutHeader">
                                     <div id="creators_notes_div" class="title_restorable flexGap5 wide100p ">
@@ -8203,6 +8219,7 @@
     <script type="module" src="lib/eventemitter.js"></script>
     <script type="module" src="scripts/i18n.js"></script>
     <script type="module" src="script.js"></script>
+    <script type="module" src="scripts/consumer-shell.js"></script>
     <script>
         window.addEventListener('load', (event) => {
             const documentHeight = () => {

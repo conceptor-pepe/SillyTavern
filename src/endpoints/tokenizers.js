@@ -1007,7 +1007,12 @@ router.post('/openai/count', async function (req, res) {
             try {
                 num_tokens += tokensPerMessage;
                 for (const [key, value] of Object.entries(msg)) {
-                    num_tokens += tokenizer.encode(value).length;
+                    const text = typeof value === 'string'
+                        ? value
+                        : value == null
+                            ? ''
+                            : JSON.stringify(value);
+                    num_tokens += tokenizer.encode(text).length;
                     if (key == 'name') {
                         num_tokens += tokensPerName;
                     }

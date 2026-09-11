@@ -9796,6 +9796,12 @@ export async function createOrEditCharacter(e) {
             console.log(`new avatar id: ${avatarId}`);
             createTagMapFromList('#tagList', avatarId);
             await getCharacters();
+            const createdCharacterIndex = characters.findIndex(character => character.avatar === avatarId);
+            if (createdCharacterIndex >= 0) {
+                await eventSource.emit(event_types.CHARACTER_EDITED, {
+                    detail: { id: createdCharacterIndex, character: characters[createdCharacterIndex] },
+                });
+            }
 
             select_rm_info('char_create', avatarId, oldSelectedChar);
 

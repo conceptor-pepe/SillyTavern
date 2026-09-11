@@ -2649,6 +2649,31 @@ export async function createGenerationParameters(settings, model, type, messages
     }
     messages = messages.filter(msg => msg && typeof msg === 'object');
 
+    // Some OpenAI-compatible gateways only accept string message content.
+    // Flatten structured content before it is forwarded to a custom endpoint.
+    const contentToText = (content) => {
+        if (typeof content === 'string') return content;
+        if (content == null) return '';
+        if (Array.isArray(content)) {
+            return content.map((part) => {
+                if (typeof part === 'string') return part;
+                if (!part || typeof part !== 'object') return String(part ?? '');
+                if (typeof part.text === 'string') return part.text;
+                if (typeof part.content === 'string') return part.content;
+                if (part.type === 'image_url' && part.image_url?.url) return `[image: ${part.image_url.url}]`;
+                return '';
+            }).filter(Boolean).join('\n');
+        }
+        return typeof content === 'object' ? JSON.stringify(content) : String(content);
+    };
+
+    if (settings.chat_completion_source === chat_completion_sources.CUSTOM) {
+        messages = messages.map((message) => ({
+            ...message,
+            content: contentToText(message.content),
+        }));
+    }
+
     // "OpenAI-like" sources
     const gptSources = [
         chat_completion_sources.OPENAI,

@@ -34,6 +34,7 @@ import {
     saveReply,
     saveSettingsDebounced,
     selectCharacterById,
+    sendTextareaMessage,
     sendGenerationRequest,
     sendStreamingRequest,
     sendSystemMessage,
@@ -131,7 +132,9 @@ export function getContext() {
         saveSettingsDebounced,
         onlineStatus: online_status,
         maxContext: Number(max_context),
-        chatMetadata: chat_metadata,
+        get chatMetadata() {
+            return chat_metadata;
+        },
         saveMetadataDebounced,
         streamingProcessor,
         eventSource,
@@ -159,6 +162,7 @@ export function getContext() {
         activateSendButtons,
         deactivateSendButtons,
         saveReply,
+        sendTextareaMessage,
         substituteParams,
         substituteParamsExtended,
         SlashCommandParser,
