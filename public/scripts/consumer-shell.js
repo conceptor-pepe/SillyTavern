@@ -124,13 +124,13 @@ function createShell() {
                 <div class="consumer-nav-links" role="navigation" aria-label="主导航">
                     <button class="consumer-nav-button is-active" data-consumer-action="discover">角色</button>
                     <button class="consumer-nav-button" data-consumer-action="history">最近聊天</button>
-                    <button class="consumer-nav-button" data-consumer-action="create">创作者</button>
+                    <button class="consumer-nav-button" data-consumer-action="creator">创作者</button>
                 </div>
                 <div class="consumer-nav-actions">
                     <span class="consumer-connection-status" data-consumer-connection-status><i class="fa-solid fa-circle"></i><span>连接检查中</span></span>
                         <button class="consumer-nav-button consumer-history-button" data-consumer-action="history"><i class="fa-regular fa-clock"></i> 最近聊天</button>
                     <button class="consumer-nav-button consumer-create-button" data-consumer-action="create"><i class="fa-solid fa-user-plus"></i> 创建角色</button>
-                    <button class="consumer-nav-button" data-consumer-action="advanced"><i class="fa-solid fa-sliders"></i> 高级模式</button>
+                    <button class="consumer-nav-button consumer-more-button" data-consumer-action="more"><i class="fa-solid fa-ellipsis"></i> 更多</button>
                     <button class="consumer-icon-button" data-consumer-action="auto-voice" title="自动朗读 AI 回复" aria-label="自动朗读 AI 回复" aria-pressed="false"><i class="fa-solid fa-volume-high"></i></button>
                 </div>
             </nav>
@@ -149,10 +149,33 @@ function createShell() {
                             <button class="consumer-tab" data-consumer-filter="recent" role="tab" aria-selected="false">最近聊天</button>
                             <button class="consumer-tab" data-consumer-filter="favorite" role="tab" aria-selected="false">收藏</button>
                         </div>
+                        <label class="consumer-sort-wrap">排序
+                            <select data-consumer-sort aria-label="角色排序">
+                                <option value="recommended">推荐</option>
+                                <option value="latest">最新</option>
+                                <option value="name">名称</option>
+                            </select>
+                        </label>
                         <span data-consumer-count></span>
                     </div>
                     <div class="consumer-tag-filters" data-consumer-tags role="listbox" aria-label="按标签筛选"></div>
                     <div class="consumer-character-grid" data-consumer-characters></div>
+                </section>
+                <section class="consumer-view" data-consumer-view-panel="creator">
+                    <div class="consumer-page-heading">
+                        <span class="consumer-detail-kicker">创作者空间</span>
+                        <h1>管理你的角色</h1>
+                        <p>创建、整理并导入属于你的角色卡。</p>
+                        <div class="consumer-detail-actions">
+                            <button class="consumer-primary-button" data-consumer-action="create"><i class="fa-solid fa-bolt"></i> 快速创建</button>
+                            <button class="consumer-secondary-button" data-consumer-action="advanced"><i class="fa-solid fa-sliders"></i> 高级创建</button>
+                        </div>
+                    </div>
+                    <div class="consumer-creator-grid">
+                        <div><strong>我的角色</strong><span data-consumer-creator-count>角色库</span></div>
+                        <div><strong>角色卡导入</strong><span>使用现有角色卡继续创作</span></div>
+                        <div><strong>媒体资产</strong><span>为角色添加场景图和画廊</span></div>
+                    </div>
                 </section>
                 <section class="consumer-view" data-consumer-view-panel="detail">
                     <button class="consumer-back" data-consumer-action="discover"><i class="fa-solid fa-arrow-left"></i> 返回角色列表</button>
@@ -183,25 +206,30 @@ function createShell() {
                         <button class="consumer-icon-button" data-consumer-action="discover" title="返回角色列表" aria-label="返回角色列表"><i class="fa-solid fa-arrow-left"></i></button>
                         <img data-consumer-chat-avatar alt="">
                         <div class="consumer-chat-heading"><strong data-consumer-chat-name></strong><small data-consumer-chat-status>正在这个场景中陪伴你</small></div>
-                        <button class="consumer-icon-button" data-consumer-action="chat-history" title="聊天记录" aria-label="聊天记录"><i class="fa-regular fa-clock"></i></button>
-                        <button class="consumer-icon-button" data-consumer-action="new-chat" title="新建聊天" aria-label="新建聊天"><i class="fa-solid fa-plus"></i></button>
-                        <button class="consumer-icon-button" data-consumer-action="chat-note" title="本聊天备注" aria-label="本聊天备注"><i class="fa-solid fa-note-sticky"></i></button>
-                        <button class="consumer-icon-button" data-consumer-action="copy-latest" title="复制最近回复" aria-label="复制最近回复"><i class="fa-regular fa-copy"></i></button>
-                        <button class="consumer-icon-button" data-consumer-action="regenerate" title="重新生成最近回复" aria-label="重新生成最近回复"><i class="fa-solid fa-rotate"></i></button>
+                        <button class="consumer-icon-button consumer-chat-more" data-consumer-action="more" title="更多聊天操作" aria-label="更多聊天操作"><i class="fa-solid fa-ellipsis"></i></button>
                         <button class="consumer-icon-button consumer-chat-favorite" data-consumer-action="favorite" title="收藏角色" aria-label="收藏角色"><i class="fa-regular fa-heart"></i></button>
                     </header>
                     <div class="consumer-chat-frame"></div>
                     <div class="consumer-composer">
                         <div class="consumer-composer-inner">
                             <button class="consumer-voice" data-consumer-action="voice" title="播放最近一条 AI 回复" aria-label="播放最近一条 AI 回复"><i class="fa-solid fa-volume-high"></i></button>
-                            <textarea data-consumer-input rows="1" placeholder="说点什么..."></textarea>
-                            <button class="consumer-mic" data-consumer-action="record" title="语音输入" aria-label="语音输入"><i class="fa-solid fa-microphone"></i></button>
+                            <span class="consumer-input-mode" data-consumer-input-mode>文字输入</span>
+                            <textarea data-consumer-input rows="1" placeholder="输入消息..." data-text-placeholder="输入消息..." data-voice-placeholder="点击麦克风开始说话"></textarea>
+                            <button class="consumer-mic" data-consumer-action="record" title="点击启用语音输入" aria-label="点击启用语音输入" aria-pressed="false"><i class="fa-solid fa-microphone"></i><span>语音</span></button>
                             <button class="consumer-send" data-consumer-action="send" title="发送" aria-label="发送"><i class="fa-solid fa-arrow-up"></i></button>
                         </div>
                         <div class="consumer-recording-status" data-consumer-recording-status aria-live="polite"></div>
                     </div>
                 </section>
             </main>
+            <div class="consumer-more-menu" data-consumer-more-menu hidden>
+                <button data-consumer-action="chat-history"><i class="fa-regular fa-clock"></i> 聊天记录</button>
+                <button data-consumer-action="new-chat"><i class="fa-solid fa-plus"></i> 新建聊天</button>
+                <button data-consumer-action="chat-note"><i class="fa-solid fa-note-sticky"></i> 本聊天备注</button>
+                <button data-consumer-action="copy-latest"><i class="fa-regular fa-copy"></i> 复制最近回复</button>
+                <button data-consumer-action="regenerate"><i class="fa-solid fa-rotate"></i> 重新生成</button>
+                <button data-consumer-action="advanced"><i class="fa-solid fa-sliders"></i> 切换高级模式</button>
+            </div>
         </div>`;
     document.body.prepend(shell);
     const noteSheet = document.createElement('dialog');
@@ -314,9 +342,10 @@ function initConsumerShell(context) {
 
     const state = {
         characters: [],
-        selectedId: null,
+        selectedKey: null,
         query: '',
         recording: false,
+        voiceMode: false,
         recognition: null,
         generating: false,
         connected: false,
@@ -353,9 +382,15 @@ function initConsumerShell(context) {
     };
     restoreButton?.addEventListener('click', () => {
         enterConsumerMode();
-        showView(state.selectedId === null ? 'discover' : 'chat');
+        showView(state.selectedKey === null ? 'discover' : 'chat');
     });
-    const selectedCharacter = () => state.characters[state.selectedId];
+    const selectedIndex = () => state.selectedKey === null
+        ? null
+        : state.characters.findIndex((character, index) => characterKey(character, index) === state.selectedKey);
+    const selectedCharacter = () => {
+        const index = selectedIndex();
+        return index === null || index < 0 ? null : state.characters[index];
+    };
     const isFavorite = (character) => state.favorites.has(characterKey(character));
     const updateFavoriteButton = () => {
         const character = selectedCharacter();
@@ -401,8 +436,10 @@ function initConsumerShell(context) {
     };
     const setBackground = () => {
         const character = selectedCharacter();
-        const index = state.selectedId ?? 0;
-        shell.querySelector('.consumer-app').style.setProperty('--consumer-background', `url("${characterBackground(context, character, index)}")`);
+        const index = selectedIndex() ?? 0;
+        const app = shell.querySelector('.consumer-app');
+        app.style.setProperty('--consumer-background', `url("${characterBackground(context, character, index)}")`);
+        app.classList.toggle('has-character-background', Boolean(character));
     };
     const renderCards = () => {
         const list = shell.querySelector('[data-consumer-characters]');
@@ -418,25 +455,27 @@ function initConsumerShell(context) {
         } else if (state.filter === 'favorite') {
             visible = visible.filter((character) => isFavorite(character));
         }
+        const sort = shell.querySelector('[data-consumer-sort]')?.value || 'recommended';
+        if (sort === 'name') visible.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+        if (sort === 'latest') visible.sort((a, b) => Number(b.create_date || b.created_at || 0) - Number(a.create_date || a.created_at || 0));
         shell.querySelector('[data-consumer-count]').textContent = `${visible.length} 个角色`;
         list.innerHTML = visible.length ? visible.map((character) => {
             const id = state.characters.indexOf(character);
-            const tags = characterTags(character);
+            const tags = characterTags(character).slice(0, 2);
             const favorite = isFavorite(character);
             const media = characterMedia(context, character);
             return `<article class="consumer-character-card" data-consumer-character="${id}">
                 <div class="consumer-character-visual">
                     <img class="consumer-character-avatar" loading="lazy" decoding="async" src="${escapeHtml(mediaUrl(media.cover))}" alt="${escapeHtml(character.name)}" onerror="this.classList.add('is-broken'); this.removeAttribute('src');">
+                    <div class="consumer-character-overlay"><strong>${escapeHtml(character.name)}</strong><span>${escapeHtml(characterDescription(character))}</span></div>
                     ${media.gallery.length > 1 ? `<span class="consumer-card-media-count"><i class="fa-solid fa-images"></i> ${media.gallery.length}</span>` : ''}
                 </div>
                 <button class="consumer-card-favorite ${favorite ? 'is-active' : ''}" data-consumer-action="favorite" data-consumer-character-favorite="${id}" title="${favorite ? '取消收藏' : '收藏角色'}" aria-label="${favorite ? '取消收藏' : '收藏角色'}" aria-pressed="${favorite}"><i class="${favorite ? 'fa-solid' : 'fa-regular'} fa-heart"></i></button>
                 <div class="consumer-character-copy">
-                    <strong>${escapeHtml(character.name)}</strong>
-                    <p>${escapeHtml(characterDescription(character))}</p>
                     <div class="consumer-card-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
                 </div>
             </article>`;
-        }).join('') : '<div class="consumer-empty">没有找到匹配的角色</div>';
+        }).join('') : `<div class="consumer-empty"><strong>${state.characters.length ? '没有找到匹配的角色' : '还没有角色'}</strong><span>${state.characters.length ? '试试其他关键词或标签' : '先创建一个角色，开始你的第一段对话'}</span></div>`;
     };
     const renderDetail = () => {
         const character = selectedCharacter();
@@ -487,7 +526,7 @@ function initConsumerShell(context) {
             gallery: gallery.map((item, index) => ({ ...item, order: index })),
         };
         try {
-            await context.writeExtensionField?.(state.selectedId, 'consumer_media', value);
+            await context.writeExtensionField?.(selectedIndex(), 'consumer_media', value);
             character.data = character.data || {};
             character.data.extensions = character.data.extensions || {};
             character.data.extensions.consumer_media = value;
@@ -653,6 +692,10 @@ function initConsumerShell(context) {
     const noteSheet = document.querySelector('.consumer-note-sheet');
     const noteInput = document.querySelector('#consumer-note-input');
     const finishGeneration = () => renderGenerationState(false);
+    let generationWatchdog = null;
+    let generationSyncTimer = null;
+    let generationStartedAt = 0;
+    const hasAssistantText = (text) => Boolean(text && !/^(?:…|\.{3})$/.test(text));
     const renderConnectionStatus = (status = context.onlineStatus) => {
         const connected = status && status !== 'no_connection';
         state.connected = Boolean(connected);
@@ -662,7 +705,27 @@ function initConsumerShell(context) {
         connectionStatus.title = connected ? `当前模型：${status}` : '请在高级模式中配置 API';
     };
     const renderGenerationState = (generating) => {
+        if (generationWatchdog) window.clearTimeout(generationWatchdog);
+        if (generationSyncTimer) window.clearInterval(generationSyncTimer);
         state.generating = generating;
+        if (generating) {
+            generationStartedAt = performance.now();
+            generationWatchdog = window.setTimeout(() => renderGenerationState(false), 60000);
+            generationSyncTimer = window.setInterval(() => {
+                if (!state.generating || performance.now() - generationStartedAt < 800) return;
+                const nativeGenerating = context.isGenerating?.();
+                const latest = latestAssistantMessage();
+                const text = latest?.querySelector('.mes_text')?.textContent?.trim() || '';
+                const assistantFinished = latest && hasAssistantText(text) && (
+                    latest !== state.previousAssistantMessage ||
+                    text !== state.previousAssistantText
+                );
+                if (nativeGenerating === false && assistantFinished) finishGeneration();
+            }, 250);
+        } else {
+            generationWatchdog = null;
+            generationSyncTimer = null;
+        }
         if (!generating) {
             state.completionObserver?.disconnect();
             state.completionObserver = null;
@@ -672,10 +735,10 @@ function initConsumerShell(context) {
         sendButton.disabled = false;
         micButton.disabled = generating;
         shell.querySelector('.consumer-composer').classList.toggle('is-generating', generating);
-        sendButton.dataset.consumerAction = generating ? 'stop' : 'send';
-        sendButton.title = generating ? '停止生成' : '发送';
+        sendButton.dataset.consumerAction = generating ? 'generating' : 'send';
+        sendButton.title = generating ? '正在生成' : '发送';
         sendButton.setAttribute('aria-label', sendButton.title);
-        sendButton.innerHTML = `<i class="fa-solid ${generating ? 'fa-stop' : 'fa-arrow-up'}"></i>`;
+        sendButton.innerHTML = `<i class="fa-solid ${generating ? 'fa-spinner consumer-generating-spinner' : 'fa-arrow-up'}"></i>`;
     };
     const setRecordingState = (recording, message = '') => {
         state.recording = recording;
@@ -683,12 +746,28 @@ function initConsumerShell(context) {
         micButton.setAttribute('aria-pressed', String(recording));
         recordingStatus.textContent = message;
     };
+    const setVoiceMode = (enabled) => {
+        state.voiceMode = enabled;
+        input.classList.toggle('is-voice-mode', enabled);
+        micButton.classList.toggle('is-voice-mode', enabled);
+        micButton.title = enabled ? '退出语音输入' : '启用语音输入';
+        micButton.setAttribute('aria-label', micButton.title);
+        micButton.setAttribute('aria-pressed', String(enabled));
+        input.placeholder = enabled ? input.dataset.voicePlaceholder : input.dataset.textPlaceholder;
+        shell.querySelector('[data-consumer-input-mode]').textContent = enabled ? '语音输入' : '文字输入';
+        if (!enabled && state.recording) {
+            state.recognition?.stop();
+            setRecordingState(false);
+        }
+    };
     const startVoiceInput = () => {
         const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!Recognition) {
+            setVoiceMode(false);
             window.toastr?.info('当前浏览器不支持语音输入，请使用 Chrome 或 Edge');
             return;
         }
+        if (!state.voiceMode) setVoiceMode(true);
         if (state.recording) {
             state.recognition?.stop();
             return;
@@ -725,18 +804,30 @@ function initConsumerShell(context) {
         const originalInput = document.querySelector('#send_textarea');
         const message = input.value.trim();
         if (!message || !originalInput) return;
-        if (state.generating) return;
+        if (state.generating) {
+            // The shell can miss a native completion event when a provider
+            // closes a stream during a chat reload. Trust the native mutex
+            // before rejecting a new Enter press.
+            if (context.isGenerating?.()) {
+                window.toastr?.info('上一条消息仍在生成，请稍候');
+                return;
+            }
+            finishGeneration();
+        }
         if (!state.connected) {
             window.toastr?.error('请先在高级模式中连接 AI');
             return;
         }
         state.previousAssistantMessage = latestAssistantMessage();
-        renderGenerationState(true);
+        state.previousAssistantText = state.previousAssistantMessage?.querySelector('.mes_text')?.textContent?.trim() || '';
         state.completionObserver?.disconnect();
         state.completionObserver = new MutationObserver(() => {
             const latest = latestAssistantMessage();
             const text = latest?.querySelector('.mes_text')?.textContent?.trim();
-            if (latest && latest !== state.previousAssistantMessage && text) {
+            if (latest && hasAssistantText(text) && (
+                latest !== state.previousAssistantMessage ||
+                text !== state.previousAssistantText
+            )) {
                 finishGeneration();
             }
         });
@@ -745,8 +836,12 @@ function initConsumerShell(context) {
         originalInput.dispatchEvent(new Event('input', { bubbles: true }));
         input.value = '';
         input.style.height = '';
+        renderGenerationState(true);
         try {
-            await context.sendTextareaMessage?.();
+            const generation = context.sendTextareaMessage?.();
+            if (generation && typeof generation.then === 'function') {
+                await generation;
+            }
         } catch (error) {
             console.error('Consumer chat generation failed', error);
             const message = error?.error?.message || error?.message || 'AI 暂时无法回复，请稍后再试';
@@ -758,8 +853,12 @@ function initConsumerShell(context) {
         }
     };
     const openChat = async () => {
-        if (state.selectedId === null) return;
-        await context.selectCharacterById(state.selectedId, { switchMenu: false });
+        const index = selectedIndex();
+        if (index === null || index < 0) return;
+        // A chat switch must never inherit a stale generation lock from the
+        // previous view or a request that ended before its UI event arrived.
+        finishGeneration();
+        await context.selectCharacterById(index, { switchMenu: false });
         const key = characterKey(selectedCharacter());
         state.recents = [key, ...state.recents.filter(item => item !== key)].slice(0, 12);
         writeStoredList(RECENTS_KEY, state.recents);
@@ -821,16 +920,24 @@ function initConsumerShell(context) {
     autoVoiceButton.title = state.autoVoice ? '关闭自动朗读' : '自动朗读 AI 回复';
     autoVoiceButton.setAttribute('aria-label', autoVoiceButton.title);
     shell.addEventListener('click', async (event) => {
+        const moreMenu = shell.querySelector('[data-consumer-more-menu]');
+        const moreAction = event.target.closest('[data-consumer-action="more"]');
+        if (moreAction) {
+            moreMenu.hidden = !moreMenu.hidden;
+            return;
+        }
+        if (moreMenu && !event.target.closest('[data-consumer-more-menu]')) moreMenu.hidden = true;
         const card = event.target.closest('[data-consumer-character]');
         const favoriteButton = event.target.closest('[data-consumer-character-favorite]');
         if (favoriteButton) {
-            state.selectedId = Number(favoriteButton.dataset.consumerCharacterFavorite);
+            state.selectedKey = characterKey(state.characters[Number(favoriteButton.dataset.consumerCharacterFavorite)], Number(favoriteButton.dataset.consumerCharacterFavorite));
             toggleFavorite();
             event.stopPropagation();
             return;
         }
         if (card) {
-            state.selectedId = Number(card.dataset.consumerCharacter);
+            const index = Number(card.dataset.consumerCharacter);
+            state.selectedKey = characterKey(state.characters[index], index);
             renderDetail();
             showView('detail');
             return;
@@ -841,13 +948,17 @@ function initConsumerShell(context) {
             document.querySelector('#rm_button_create')?.click();
             return;
         }
+        if (action === 'creator') {
+            showView('creator');
+            return;
+        }
         if (action === 'advanced') {
             enterAdvancedMode();
             return;
         }
         if (action === 'consumer') {
             enterConsumerMode();
-            showView(state.selectedId === null ? 'discover' : 'chat');
+            showView(state.selectedKey === null ? 'discover' : 'chat');
             return;
         }
         if (action === 'favorite') {
@@ -905,7 +1016,10 @@ function initConsumerShell(context) {
             renderGenerationState(false);
         }
         if (action === 'voice') await speakLatestMessage(context);
-        if (action === 'record') startVoiceInput();
+        if (action === 'record') {
+            if (state.voiceMode && !state.recording) setVoiceMode(false);
+            else startVoiceInput();
+        }
         if (action === 'auto-voice') {
             state.autoVoice = !state.autoVoice;
             writeStoredList(AUTO_VOICE_KEY, state.autoVoice ? ['on'] : []);
@@ -921,8 +1035,9 @@ function initConsumerShell(context) {
         input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
     });
     input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
+        if (event.key === 'Enter' && !event.shiftKey && !state.voiceMode) {
             event.preventDefault();
+            event.stopPropagation();
             void sendMessage();
         }
     });
@@ -930,6 +1045,7 @@ function initConsumerShell(context) {
         state.query = event.target.value;
         renderCards();
     });
+    shell.querySelector('[data-consumer-sort]').addEventListener('change', renderCards);
     shell.querySelectorAll('[data-consumer-filter]').forEach((tab) => {
         tab.addEventListener('click', () => {
             state.filter = tab.dataset.consumerFilter;
@@ -951,7 +1067,7 @@ function initConsumerShell(context) {
     document.querySelector('#consumer_media_button')?.addEventListener('click', () => {
         const currentId = Number(context.characterId);
         if (Number.isInteger(currentId) && currentId >= 0 && state.characters[currentId]) {
-            state.selectedId = currentId;
+            state.selectedKey = characterKey(state.characters[currentId], currentId);
         }
         enterConsumerMode();
         openMediaSheet();
@@ -1030,6 +1146,8 @@ function initConsumerShell(context) {
     });
     const syncCharacters = () => {
         state.characters = Array.isArray(context.characters) ? context.characters.filter(Boolean) : [];
+        const creatorCount = shell.querySelector('[data-consumer-creator-count]');
+        if (creatorCount) creatorCount.textContent = `${state.characters.length} 个角色`;
         renderTagFilters();
         renderCards();
     };
@@ -1057,6 +1175,7 @@ function initConsumerShell(context) {
     });
     context.eventSource?.on(context.eventTypes.GENERATION_STARTED, () => renderGenerationState(true));
     context.eventSource?.on(context.eventTypes.GENERATION_ENDED, finishGeneration);
+    context.eventSource?.on(context.eventTypes.GENERATION_STOPPED, finishGeneration);
     context.eventSource?.on(context.eventTypes.MESSAGE_RECEIVED, finishGeneration);
     renderGenerationState(false);
     context.eventSource?.on(context.eventTypes.CHARACTER_MESSAGE_RENDERED, (messageId) => {
@@ -1065,7 +1184,10 @@ function initConsumerShell(context) {
         // an authoritative completion signal for the consumer shell.
         const latest = latestAssistantMessage();
         const text = latest?.querySelector('.mes_text')?.textContent?.trim();
-        if (state.generating && latest && latest !== state.previousAssistantMessage && text) {
+        if (state.generating && latest && hasAssistantText(text) && (
+            latest !== state.previousAssistantMessage ||
+            text !== state.previousAssistantText
+        )) {
             finishGeneration();
         }
         if (state.autoVoice) {

@@ -69,6 +69,7 @@ import {
     scrollOnMediaLoad,
     getOneCharacter,
     getCharacterSource,
+    isGenerating,
 } from '../script.js';
 import {
     extension_settings,
@@ -163,6 +164,7 @@ export function getContext() {
         deactivateSendButtons,
         saveReply,
         sendTextareaMessage,
+        isGenerating,
         substituteParams,
         substituteParamsExtended,
         SlashCommandParser,

@@ -79,7 +79,7 @@ const API_AI21 = 'https://api.ai21.com/studio/v1';
 const API_CHUTES = 'https://llm.chutes.ai/v1';
 const API_ELECTRONHUB = 'https://api.electronhub.ai/v1';
 const API_NANOGPT = 'https://nano-gpt.com/api/v1';
-const API_DEEPSEEK = 'https://api.deepseek.com/beta';
+const API_DEEPSEEK = 'https://api.deepseek.com';
 const API_XAI = 'https://api.x.ai/v1';
 const API_AIMLAPI = 'https://api.aimlapi.com/v1';
 const API_POLLINATIONS = 'https://gen.pollinations.ai/v1';
@@ -2561,13 +2561,21 @@ router.post('/generate', async function (request, response) {
             'presence_penalty': request.body.presence_penalty,
             'frequency_penalty': request.body.frequency_penalty,
             'top_p': request.body.top_p,
-            'top_k': request.body.top_k,
             'stop': isTextCompletion === false ? request.body.stop : undefined,
             'logit_bias': request.body.logit_bias,
             'seed': request.body.seed,
             'n': request.body.n,
             ...bodyParams,
         };
+
+        // OpenAI-compatible gateways reject provider-specific sampling fields.
+        if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM) {
+            delete requestBody.top_k;
+            delete requestBody.min_p;
+            delete requestBody.top_a;
+            delete requestBody.repetition_penalty;
+            delete requestBody.mirostat;
+        }
 
         if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM) {
             excludeKeysByYaml(requestBody, request.body.custom_exclude_body);
