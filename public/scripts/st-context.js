@@ -8,6 +8,7 @@ import {
     chat_metadata,
     CONNECT_API_MAP,
     create_save,
+    createCharacterFromData,
     deactivateSendButtons,
     event_types,
     eventSource,
@@ -224,6 +225,7 @@ export function getContext() {
         tagMap: tag_map,
         menuType: menu_type,
         createCharacterData: create_save,
+        createCharacterFromData,
         /** @deprecated Legacy snake-case naming, compatibility with old extensions */
         event_types: event_types,
         Popup,

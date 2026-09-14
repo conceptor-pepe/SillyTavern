@@ -168,6 +168,7 @@ function createShell() {
                         <p>创建、整理并导入属于你的角色卡。</p>
                         <div class="consumer-detail-actions">
                             <button class="consumer-primary-button" data-consumer-action="create"><i class="fa-solid fa-bolt"></i> 快速创建</button>
+                            <button class="consumer-secondary-button" data-consumer-action="import-character"><i class="fa-solid fa-file-import"></i> 导入角色卡</button>
                             <button class="consumer-secondary-button" data-consumer-action="advanced"><i class="fa-solid fa-sliders"></i> 高级创建</button>
                         </div>
                     </div>
@@ -276,6 +277,43 @@ function createShell() {
             </div>
         </form>`;
     document.body.append(mediaSheet);
+    const createSheet = document.createElement('dialog');
+    createSheet.className = 'consumer-create-sheet';
+    createSheet.innerHTML = `
+        <form method="dialog" class="consumer-create-dialog">
+            <div class="consumer-note-heading">
+                <div>
+                    <span class="consumer-detail-kicker">角色工作室</span>
+                    <h2>快速创建角色</h2>
+                </div>
+                <button class="consumer-icon-button" value="cancel" title="关闭" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p class="consumer-create-intro">先写下角色是谁，创建后就可以直接开始聊天。</p>
+            <label for="consumer-create-name">角色名称</label>
+            <input id="consumer-create-name" name="name" autocomplete="off" placeholder="例如：林夏" required>
+            <label for="consumer-create-description">一句话介绍</label>
+            <textarea id="consumer-create-description" name="description" rows="3" placeholder="例如：住在海边、擅长倾听的深夜电台主播" required></textarea>
+            <div class="consumer-create-advanced">
+                <button type="button" class="consumer-create-advanced-toggle" aria-expanded="false">
+                    <span><strong>更多设定</strong><small>背景、场景和世界背景，可稍后补充</small></span>
+                    <i class="fa-solid fa-chevron-down"></i>
+                </button>
+                <div class="consumer-create-advanced-body">
+                    <label for="consumer-create-background">角色背景</label>
+                    <textarea id="consumer-create-background" rows="3" placeholder="这个角色过去经历过什么？"></textarea>
+                    <label for="consumer-create-scenario">当前场景</label>
+                    <textarea id="consumer-create-scenario" rows="3" placeholder="例如：午夜，你打来了一通电话。"></textarea>
+                    <label for="consumer-create-world">世界背景</label>
+                    <textarea id="consumer-create-world" rows="3" placeholder="故事发生的时代、地点和重要规则。"></textarea>
+                </div>
+            </div>
+            <div class="consumer-create-error" data-consumer-create-error role="alert"></div>
+            <div class="consumer-note-actions">
+                <button class="consumer-secondary-button" value="cancel">取消</button>
+                <button class="consumer-primary-button" value="create" data-consumer-create-submit><i class="fa-solid fa-wand-magic-sparkles"></i> 创建并开始聊天</button>
+            </div>
+        </form>`;
+    document.body.append(createSheet);
     const restore = document.createElement('button');
     restore.id = 'consumer-restore';
     restore.className = 'consumer-restore';
@@ -285,6 +323,7 @@ function createShell() {
     restore.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i><span>简洁模式</span>';
     document.body.append(restore);
     shell.consumerMediaSheet = mediaSheet;
+    shell.consumerCreateSheet = createSheet;
     return shell;
 }
 
@@ -330,6 +369,7 @@ async function speakLatestMessage(context) {
 function initConsumerShell(context) {
     const shell = createShell();
     const mediaSheet = shell.consumerMediaSheet;
+    const createSheet = shell.consumerCreateSheet;
     const restoreButton = document.querySelector('#consumer-restore');
     const chatFrame = shell.querySelector('.consumer-chat-frame');
     const originalChat = document.querySelector('#chat');
@@ -691,6 +731,65 @@ function initConsumerShell(context) {
     const sendButton = shell.querySelector('.consumer-send');
     const noteSheet = document.querySelector('.consumer-note-sheet');
     const noteInput = document.querySelector('#consumer-note-input');
+    const createForm = createSheet.querySelector('form');
+    const createSubmit = createSheet.querySelector('[data-consumer-create-submit]');
+    const createError = createSheet.querySelector('[data-consumer-create-error]');
+    const createAdvanced = createSheet.querySelector('.consumer-create-advanced');
+    const openCreateSheet = () => {
+        createForm.reset();
+        createError.textContent = '';
+        createSubmit.disabled = false;
+        createSubmit.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 创建并开始聊天';
+        createAdvanced.classList.remove('is-open');
+        createAdvanced.querySelector('button').setAttribute('aria-expanded', 'false');
+        if (typeof createSheet.showModal === 'function') createSheet.showModal();
+        else createSheet.setAttribute('open', '');
+        requestAnimationFrame(() => createSheet.querySelector('#consumer-create-name')?.focus());
+    };
+    createAdvanced.querySelector('button').addEventListener('click', () => {
+        const open = createAdvanced.classList.toggle('is-open');
+        createAdvanced.querySelector('button').setAttribute('aria-expanded', String(open));
+    });
+    createForm.addEventListener('submit', async (event) => {
+        if (event.submitter?.value !== 'create') return;
+        event.preventDefault();
+        const formData = new FormData(createForm);
+        const name = String(formData.get('name') || '').trim();
+        const description = String(formData.get('description') || '').trim();
+        if (!name || !description) {
+            createError.textContent = !name ? '请先填写角色名称' : '请先写一句角色介绍';
+            return;
+        }
+        createSubmit.disabled = true;
+        createSubmit.innerHTML = '<i class="fa-solid fa-spinner consumer-generating-spinner"></i> 正在创建...';
+        createError.textContent = '';
+        try {
+            const result = await context.createCharacterFromData?.({
+                name,
+                description,
+                background: document.querySelector('#consumer-create-background')?.value,
+                scenario: document.querySelector('#consumer-create-scenario')?.value,
+                world: document.querySelector('#consumer-create-world')?.value,
+            });
+            if (!result?.ok) throw result?.error || new Error('创建失败');
+            createSheet.close();
+            syncCharacters();
+            const created = state.characters.findIndex(character => character.avatar === result.avatarId);
+            if (created >= 0) {
+                state.selectedKey = characterKey(state.characters[created], created);
+                renderDetail();
+                await openChat();
+            } else {
+                showView('discover');
+                window.toastr?.success('角色已创建，请在角色列表中查看');
+            }
+        } catch (error) {
+            console.error('Consumer quick character creation failed', error);
+            createError.textContent = error?.message || '创建失败，请检查连接后重试';
+            createSubmit.disabled = false;
+            createSubmit.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> 创建并开始聊天';
+        }
+    });
     const finishGeneration = () => renderGenerationState(false);
     let generationWatchdog = null;
     let generationSyncTimer = null;
@@ -944,8 +1043,11 @@ function initConsumerShell(context) {
         }
         const action = event.target.closest('[data-consumer-action]')?.dataset.consumerAction;
         if (action === 'create') {
-            enterAdvancedMode();
-            document.querySelector('#rm_button_create')?.click();
+            openCreateSheet();
+            return;
+        }
+        if (action === 'import-character') {
+            document.querySelector('#character_import_file')?.click();
             return;
         }
         if (action === 'creator') {

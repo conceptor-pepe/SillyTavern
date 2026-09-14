@@ -9688,7 +9688,7 @@ function addAlternateGreeting(template, greeting, index, getArray, popup) {
 export async function createOrEditCharacter(e) {
     if (!settingsReady) {
         console.warn('Settings not ready, aborting character creation/editing.');
-        return;
+        return { ok: false, error: 'Settings are not ready' };
     }
 
     $('#rm_info_avatar').html('');
@@ -9707,11 +9707,11 @@ export async function createOrEditCharacter(e) {
     if ($('#form_create').attr('actiontype') == 'createcharacter') {
         if (String($('#character_name_pole').val()).length === 0) {
             toastr.error(t`Name is required`);
-            return;
+            return { ok: false, error: 'Name is required' };
         }
         if (is_group_generating || is_send_press) {
             toastr.error(t`Cannot create characters while generating. Stop the request and try again.`, t`Creation aborted`);
-            return;
+            return { ok: false, error: 'Generation is active' };
         }
         try {
             //if the character name text area isn't empty (only posible when creating a new character)
@@ -9806,9 +9806,16 @@ export async function createOrEditCharacter(e) {
             select_rm_info('char_create', avatarId, oldSelectedChar);
 
             crop_data = undefined;
+            return {
+                ok: true,
+                avatarId,
+                characterIndex: createdCharacterIndex,
+                character: createdCharacterIndex >= 0 ? characters[createdCharacterIndex] : null,
+            };
         } catch (error) {
             console.error('Error creating character', error);
             toastr.error(t`Failed to create character`);
+            return { ok: false, error };
         }
     } else {
         try {
@@ -9870,6 +9877,53 @@ export async function createOrEditCharacter(e) {
             toastr.error(t`Something went wrong while saving the character, or the image file provided was in an invalid format. Double check that the image is not a webp.`);
         }
     }
+}
+
+/**
+ * Creates a character from the consumer-facing quick-create form.
+ * This adapter deliberately reuses the native form and API contract.
+ * @param {object} data
+ * @returns {Promise<{ok: boolean, avatarId?: string, characterIndex?: number, character?: object|null, error?: unknown}>}
+ */
+export async function createCharacterFromData(data = {}) {
+    const name = String(data.name || '').trim();
+    if (!name) {
+        toastr.error(t`Name is required`);
+        return { ok: false, error: 'Name is required' };
+    }
+
+    const values = {
+        name,
+        description: String(data.description || '').trim(),
+        personality: String(data.personality || data.background || data.description || '').trim(),
+        first_message: String(data.first_message || '你好，很高兴认识你。').trim(),
+        scenario: String(data.scenario || '').trim(),
+        world: String(data.world || '').trim(),
+    };
+    const fieldMap = {
+        name: '#character_name_pole',
+        description: '#description_textarea',
+        personality: '#personality_textarea',
+        first_message: '#firstmessage_textarea',
+        scenario: '#scenario_pole',
+        world: '#character_world',
+    };
+
+    $('#form_create').attr('actiontype', 'createcharacter');
+    Object.entries(fieldMap).forEach(([key, selector]) => {
+        $(selector).val(values[key]).trigger('input');
+    });
+    create_save.name = values.name;
+    create_save.description = values.description;
+    create_save.personality = values.personality;
+    create_save.first_message = values.first_message;
+    create_save.scenario = values.scenario;
+    create_save.world = values.world;
+    create_save.avatar = null;
+    create_save.extra_books = [];
+    create_save.extensions = {};
+
+    return createOrEditCharacter();
 }
 
 /**

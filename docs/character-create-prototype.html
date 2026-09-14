@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>创建角色原型</title>
+  <style>
+    :root {
+      --ink: #17151c;
+      --muted: #77727f;
+      --line: #e9e6ed;
+      --soft: #f7f6f8;
+      --accent: #7457d9;
+      --accent-strong: #5c3fc4;
+      --accent-soft: #f0ecff;
+      --green: #4b9b72;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      color: var(--ink);
+      background: #fff;
+      font-family: NotoSans, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .app { min-height: 100dvh; background: #fff; }
+    .nav {
+      height: 70px; display: flex; align-items: center; gap: 30px;
+      padding: 0 34px; border-bottom: 1px solid var(--line);
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px; border: 0;
+      background: transparent; color: var(--ink); font-weight: 800; padding: 0;
+    }
+    .brand-mark {
+      display: grid; place-items: center; width: 31px; height: 31px;
+      border-radius: 10px; background: var(--accent); color: #fff; font-size: 12px;
+    }
+    .nav-links { display: flex; gap: 4px; }
+    .nav-link, .nav-action {
+      min-height: 38px; border: 0; border-radius: 8px; padding: 0 12px;
+      background: transparent; color: var(--muted); font-size: 13px;
+    }
+    .nav-link.active, .nav-link:hover, .nav-action:hover {
+      color: var(--accent-strong); background: var(--accent-soft);
+    }
+    .nav-actions { display: flex; gap: 5px; margin-left: auto; }
+    .shell { width: min(1120px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 70px; }
+    .heading { max-width: 620px; margin-bottom: 28px; }
+    .heading-kicker { color: var(--accent-strong); font-size: 12px; font-weight: 750; margin-bottom: 10px; }
+    h1 { margin: 0 0 9px; font-size: clamp(30px, 5vw, 46px); line-height: 1.12; }
+    .heading p { margin: 0; color: var(--muted); font-size: 15px; }
+    .create-layout {
+      display: grid; grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 18px; align-items: start;
+    }
+    .panel {
+      border: 1px solid var(--line); border-radius: var(--radius);
+      background: #fff; box-shadow: 0 14px 38px rgba(52, 38, 77, .07);
+    }
+    .form-panel { padding: clamp(22px, 4vw, 34px); }
+    .panel-title { display: flex; justify-content: space-between; align-items: start; gap: 15px; margin-bottom: 24px; }
+    .panel-title h2 { margin: 0 0 4px; font-size: 20px; }
+    .panel-title p { margin: 0; color: var(--muted); font-size: 13px; }
+    .close { width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--soft); color: var(--muted); }
+    .close:hover { background: var(--accent-soft); color: var(--accent-strong); }
+    .field { margin-bottom: 20px; }
+    label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 750; }
+    .optional { color: var(--muted); font-size: 12px; font-weight: 500; }
+    input, textarea {
+      width: 100%; border: 1px solid #dcd8e2; border-radius: 9px;
+      background: #fff; color: var(--ink); padding: 13px 14px; outline: 0;
+    }
+    input { min-height: 48px; }
+    textarea { min-height: 128px; resize: vertical; line-height: 1.6; }
+    input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(116, 87, 217, .12); }
+    .quick-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .option {
+      min-height: 34px; padding: 0 11px; border: 1px solid var(--line);
+      border-radius: 999px; color: #665f70; background: #fff; font-size: 12px;
+    }
+    .option:hover, .option.selected { border-color: #d4c9fa; color: var(--accent-strong); background: var(--accent-soft); }
+    .advanced { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 16px; }
+    .advanced-toggle {
+      display: flex; align-items: center; justify-content: space-between; width: 100%;
+      border: 0; padding: 0; color: var(--ink); background: transparent; text-align: left;
+    }
+    .advanced-toggle strong { font-size: 13px; }
+    .advanced-toggle small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .advanced-toggle span:last-child { color: var(--accent-strong); font-size: 12px; }
+    .advanced-body { display: none; padding-top: 17px; }
+    .advanced.open .advanced-body { display: block; }
+    .advanced-toggle span:last-child { font-size: 0; }
+    .advanced-toggle span:last-child::after { content: "展开"; font-size: 12px; }
+    .advanced.open .advanced-toggle span:last-child::after { content: "收起"; }
+    .actions { display: flex; align-items: center; gap: 10px; margin-top: 26px; }
+    .primary, .secondary { min-height: 46px; border-radius: 9px; padding: 0 17px; font-weight: 750; }
+    .primary { border: 0; background: var(--accent); color: #fff; }
+    .primary:hover { background: var(--accent-strong); }
+    .secondary { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+    .secondary:hover { border-color: #d4c9fa; background: var(--accent-soft); color: var(--accent-strong); }
+    .import-panel { padding: 22px; }
+    .import-panel h3 { margin: 0 0 7px; font-size: 16px; }
+    .import-panel p { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+    .import-drop {
+      display: grid; place-items: center; min-height: 180px; width: 100%; padding: 18px;
+      border: 1px dashed #cfc6df; border-radius: 10px; background: #fbfaff;
+      color: var(--muted); text-align: center;
+    }
+    .import-icon {
+      display: grid; place-items: center; width: 46px; height: 46px;
+      margin-bottom: 10px; border-radius: 14px; background: var(--accent-soft); color: var(--accent);
+    }
+    .import-drop strong { display: block; color: var(--ink); font-size: 14px; }
+    .import-drop span { display: block; margin-top: 5px; font-size: 12px; line-height: 1.5; }
+    .supported { margin-top: 14px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+    .privacy { display: flex; align-items: start; gap: 8px; margin-top: 16px; color: var(--muted); font-size: 12px; }
+    .privacy svg { flex: 0 0 auto; color: var(--green); margin-top: 1px; }
+    .preview {
+      position: fixed; inset: 0; z-index: 10; display: none; place-items: center;
+      padding: 20px; background: rgba(23, 21, 28, .36);
+    }
+    .preview.show { display: grid; }
+    .preview-card { width: min(430px, 100%); padding: 24px; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(23, 21, 28, .2); }
+    .preview-card h2 { margin: 0 0 7px; font-size: 21px; }
+    .preview-card p { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+    .preview-card .actions { justify-content: flex-end; margin-top: 0; }
+    @media (max-width: 760px) {
+      .nav { height: 62px; padding: 0 16px; gap: 12px; }
+      .nav-links { display: none; }
+      .nav-action { padding: 0 8px; }
+      .shell { width: min(100% - 28px, 560px); padding-top: 30px; }
+      .create-layout { grid-template-columns: 1fr; }
+      .import-panel { order: -1; }
+      .import-drop { min-height: 112px; display: flex; align-items: center; justify-content: flex-start; gap: 13px; text-align: left; }
+      .import-icon { margin: 0; }
+    }
+    @media (max-width: 450px) {
+      .nav-action span { display: none; }
+      .nav-action { width: 38px; padding: 0; }
+      .heading { margin-bottom: 20px; }
+      .heading h1 { font-size: 32px; }
+      .form-panel, .import-panel { padding: 18px; }
+      .actions { flex-direction: column-reverse; align-items: stretch; }
+      .actions button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <nav class="nav">
+      <button class="brand" type="button" aria-label="返回角色发现"><span class="brand-mark">AI</span><span>陪伴</span></button>
+      <div class="nav-links" aria-label="主导航">
+        <button class="nav-link active" type="button">角色</button>
+        <button class="nav-link" type="button">最近聊天</button>
+        <button class="nav-link" type="button">创作者</button>
+      </div>
+      <div class="nav-actions">
+        <button class="nav-action" type="button" title="更多"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>更多</span></button>
+      </div>
+    </nav>
+    <main class="shell">
+      <header class="heading">
+        <div class="heading-kicker">我的角色</div>
+        <h1>创建一个新角色</h1>
+        <p>告诉我你想和谁聊天，剩下的设定可以以后再补充。</p>
+      </header>
+      <div class="create-layout">
+        <section class="panel form-panel" aria-label="快速创建角色">
+          <div class="panel-title">
+            <div><h2>快速创建</h2><p>先完成最重要的一步</p></div>
+            <button class="close" type="button" title="关闭" aria-label="关闭">×</button>
+          </div>
+          <form onsubmit="return false;">
+            <div class="field">
+              <label for="name">角色名称 <span style="color:#b42318">*</span></label>
+              <input id="name" autocomplete="off" placeholder="例如：林夏">
+            </div>
+            <div class="field">
+              <label for="idea">用一句话描述这个角色 <span style="color:#b42318">*</span></label>
+              <textarea id="idea" placeholder="例如：住在海边、擅长倾听的深夜电台主播"></textarea>
+              <div class="quick-options">
+                <button class="option" type="button">温柔的陪伴者</button>
+                <button class="option" type="button">幽默的朋友</button>
+                <button class="option" type="button">奇幻世界向导</button>
+              </div>
+            </div>
+            <div class="advanced" id="advanced">
+              <button class="advanced-toggle" type="button" aria-expanded="false">
+                <span><strong>更多设定</strong><small>角色背景、当前场景、世界背景和 Lorebook</small></span>
+                <span aria-hidden="true"></span>
+              </button>
+              <div class="advanced-body">
+                <div class="field">
+                  <label for="background">角色背景 <span class="optional">可选</span></label>
+                  <textarea id="background" placeholder="写她过去经历过什么，不需要写完整小说。"></textarea>
+                </div>
+                <div class="field">
+                  <label for="scenario">当前场景 <span class="optional">可选</span></label>
+                  <textarea id="scenario" placeholder="例如：午夜，你打来了一通电话。"></textarea>
+                </div>
+                <div class="field" style="margin-bottom:0;">
+                  <label for="world">世界背景 <span class="optional">可选</span></label>
+                  <textarea id="world" placeholder="写故事发生的时代、地点和重要规则。"></textarea>
+                </div>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="secondary" id="save" type="button">保存草稿</button>
+              <button class="primary" id="create" type="button">创建并开始聊天</button>
+            </div>
+          </form>
+        </section>
+        <aside class="panel import-panel" aria-label="导入角色卡">
+          <h3>已有角色卡？</h3>
+          <p>直接导入，保留完整角色设定。</p>
+          <button class="import-drop" id="import" type="button">
+            <span class="import-icon"><svg viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg></span>
+            <span><strong>导入角色卡</strong><span>点击选择文件</span></span>
+          </button>
+          <div class="supported">支持 PNG、JSON、YAML、YML、CHARX、BYAF</div>
+          <div class="privacy"><svg viewBox="0 0 24 24"><path d="M12 3 19 6v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>角色保存在你的本地角色库中，导入后可先检查再开始聊天。</span></div>
+        </aside>
+      </div>
+    </main>
+  </div>
+  <div class="preview" id="preview" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+    <div class="preview-card">
+      <h2 id="preview-title">角色已准备好</h2>
+      <p id="preview-text">创建成功后会直接打开聊天。</p>
+      <div class="actions">
+        <button class="secondary" id="cancel" type="button">继续编辑</button>
+        <button class="primary" id="confirm" type="button">进入聊天</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const advanced = document.querySelector('#advanced');
+    document.querySelector('.advanced-toggle').addEventListener('click', () => {
+      const open = advanced.classList.toggle('open');
+      document.querySelector('.advanced-toggle').setAttribute('aria-expanded', String(open));
+    });
+    document.querySelectorAll('.option').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.option').forEach((item) => item.classList.remove('selected'));
+        button.classList.add('selected');
+        document.querySelector('#idea').value = button.textContent;
+      });
+    });
+    const preview = document.querySelector('#preview');
+    document.querySelector('#create').addEventListener('click', () => {
+      const name = document.querySelector('#name').value.trim() || '新角色';
+      document.querySelector('#preview-title').textContent = '角色已准备好';
+      document.querySelector('#preview-text').textContent = `${name} 已准备好，确认后进入聊天。`;
+      preview.classList.add('show');
+    });
+    document.querySelector('#import').addEventListener('click', () => {
+      document.querySelector('#preview-title').textContent = '导入角色卡';
+      document.querySelector('#preview-text').textContent = '选择 PNG、JSON、YAML、YML、CHARX 或 BYAF 文件后，会先展示角色信息供你确认。';
+      preview.classList.add('show');
+    });
+    document.querySelector('#cancel').addEventListener('click', () => preview.classList.remove('show'));
+    document.querySelector('#confirm').addEventListener('click', () => preview.classList.remove('show'));
+  </script>
+</body>
+</html>
