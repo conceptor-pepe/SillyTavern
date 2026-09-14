@@ -58,7 +58,14 @@ const characterBackground = (context, character, index = 0) => {
     const configured = extensions.background || extensions.chat_background || extensions.background_url;
     if (configured) {
         if (String(configured).startsWith('http') || String(configured).startsWith('/')) return configured;
+        if (String(configured).replace(/^\/+/, '').startsWith('user/images/')) return `/${String(configured).replace(/^\/+/, '')}`;
         return context.getThumbnailUrl('bg', configured);
+    }
+    const cover = extensions.consumer_media?.cover;
+    if (cover) {
+        const normalized = String(cover).replace(/^\/+/, '');
+        if (/^(https?:|data:|blob:)/i.test(String(cover))) return String(cover);
+        if (normalized.startsWith('user/images/')) return `/${normalized}`;
     }
     return context.getThumbnailUrl('bg', BACKGROUNDS[index % BACKGROUNDS.length]) || DEFAULT_BACKGROUND;
 };
@@ -168,7 +175,7 @@ function createShell() {
                         <p>创建、整理并导入属于你的角色卡。</p>
                         <div class="consumer-detail-actions">
                             <button class="consumer-primary-button" data-consumer-action="create"><i class="fa-solid fa-bolt"></i> 快速创建</button>
-                            <button class="consumer-secondary-button" data-consumer-action="import-character"><i class="fa-solid fa-file-import"></i> 导入角色卡</button>
+                            <button class="consumer-secondary-button" data-consumer-action="import-character" title="支持 PNG、JSON、YAML、YML、CHARX、BYAF"><i class="fa-solid fa-file-import"></i> 导入角色卡</button>
                             <button class="consumer-secondary-button" data-consumer-action="advanced"><i class="fa-solid fa-sliders"></i> 高级创建</button>
                         </div>
                     </div>
@@ -264,7 +271,7 @@ function createShell() {
                 </div>
                 <button class="consumer-icon-button" value="cancel" title="关闭" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <p>第一张图片会优先作为角色封面。你可以上传多张图片、调整顺序或更换封面。</p>
+            <p>上传人物图或角色卡图片。PNG 角色卡会自动读取其中的角色设定；普通图片可直接作为封面或聊天背景。</p>
             <label class="consumer-upload-dropzone">
                 <input type="file" data-consumer-media-input accept="image/*" multiple>
                 <i class="fa-solid fa-cloud-arrow-up"></i>
@@ -481,6 +488,23 @@ function initConsumerShell(context) {
         app.style.setProperty('--consumer-background', `url("${characterBackground(context, character, index)}")`);
         app.classList.toggle('has-character-background', Boolean(character));
     };
+    const setCharacterBackground = async (image) => {
+        const character = selectedCharacter();
+        const index = selectedIndex();
+        if (!character || index === null || index < 0) return;
+        try {
+            await context.writeExtensionField?.(index, 'background', image);
+            character.data = character.data || {};
+            character.data.extensions = character.data.extensions || {};
+            character.data.extensions.background = image;
+            setBackground();
+            renderMediaList();
+            window.toastr?.success('已设置为聊天背景');
+        } catch (error) {
+            console.error('Failed to save character chat background', error);
+            window.toastr?.error('聊天背景保存失败，请重试');
+        }
+    };
     const renderCards = () => {
         const list = shell.querySelector('[data-consumer-characters]');
         const query = state.query.trim().toLocaleLowerCase();
@@ -541,16 +565,21 @@ function initConsumerShell(context) {
         const list = mediaSheet.querySelector('[data-consumer-media-list]');
         if (!character || !list) return;
         const media = characterMedia(context, character);
+        const background = character.data?.extensions?.background
+            || character.data?.extensions?.chat_background
+            || character.data?.extensions?.background_url;
         list.innerHTML = media.gallery.map((item, index) => {
             const isCover = item.url === media.cover;
+            const isBackground = item.url === background;
             return `<div class="consumer-media-row" data-consumer-media-row="${index}">
                 <img src="${escapeHtml(mediaUrl(item.url))}" alt="">
                 <div class="consumer-media-row-copy">
-                    <strong>${isCover ? '封面图' : `图片 ${index + 1}`}</strong>
+                    <strong>${isCover ? '封面图' : `图片 ${index + 1}`}${isBackground ? ' · 聊天背景' : ''}</strong>
                     <small>${escapeHtml(item.caption || '角色画廊图片')}</small>
                 </div>
                 <div class="consumer-media-row-actions">
                     <button type="button" class="consumer-icon-button ${isCover ? 'is-active' : ''}" data-consumer-media-action="cover" data-consumer-media-index="${index}" title="${isCover ? '当前封面' : '设为封面'}" aria-label="${isCover ? '当前封面' : '设为封面'}"><i class="fa-solid fa-star"></i></button>
+                    <button type="button" class="consumer-icon-button ${isBackground ? 'is-active' : ''}" data-consumer-media-action="background" data-consumer-media-index="${index}" title="${isBackground ? '当前聊天背景' : '用作聊天背景'}" aria-label="${isBackground ? '当前聊天背景' : '用作聊天背景'}"><i class="fa-solid fa-image"></i></button>
                     <button type="button" class="consumer-icon-button" data-consumer-media-action="up" data-consumer-media-index="${index}" title="上移" aria-label="上移"><i class="fa-solid fa-arrow-up"></i></button>
                     <button type="button" class="consumer-icon-button" data-consumer-media-action="down" data-consumer-media-index="${index}" title="下移" aria-label="下移"><i class="fa-solid fa-arrow-down"></i></button>
                     <button type="button" class="consumer-icon-button" data-consumer-media-action="delete" data-consumer-media-index="${index}" title="删除图片" aria-label="删除图片"><i class="fa-solid fa-trash"></i></button>
@@ -1220,6 +1249,10 @@ function initConsumerShell(context) {
         const index = Number(button.dataset.consumerMediaIndex);
         const action = button.dataset.consumerMediaAction;
         if (!media.gallery[index]) return;
+        if (action === 'background') {
+            await setCharacterBackground(media.gallery[index].url);
+            return;
+        }
         if (action === 'delete') {
             if (media.gallery.length === 1) {
                 window.toastr?.info('至少保留一张角色图片');

@@ -90,9 +90,37 @@ textarea {
     background: #fff;
 }
 
-.consumer-app::before,
+.consumer-app::before {
+    content: '';
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-image: var(--consumer-background);
+    background-position: center;
+    background-size: cover;
+    opacity: 0;
+    transition: opacity 220ms ease;
+}
+
 .consumer-app::after {
-    display: none;
+    content: '';
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: rgba(255, 255, 255, 0.86);
+    opacity: 0;
+    transition: opacity 220ms ease;
+}
+
+.consumer-app.has-character-background::before,
+.consumer-app.has-character-background::after {
+    opacity: 1;
+}
+
+body.consumer-mode .consumer-chat-view {
+    background: rgba(255, 255, 255, 0.18);
 }
 
 .consumer-nav {
@@ -105,6 +133,12 @@ textarea {
     background: #fff;
     position: relative;
     z-index: 3;
+}
+
+.consumer-app > .consumer-nav,
+.consumer-app > .consumer-main {
+    position: relative;
+    z-index: 1;
 }
 
 .consumer-brand,
