@@ -34,8 +34,12 @@ func (r *Repo) Create(ctx context.Context, uid uint64, item domain.Message) (dom
 	row := model.Message{
 		ConversationID: item.ConversationID, ParentID: item.ParentID, Role: item.Role,
 		Content: item.Content, Status: item.Status, VariantNo: item.VariantNo,
-		ExtraData: extraData(item.ExtraData),
 	}
+	extra, err := extraData(item.ExtraData)
+	if err != nil {
+		return domain.Message{}, err
+	}
+	row.ExtraData = extra
 	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return domain.Message{}, err
 	}
@@ -111,9 +115,12 @@ func toMsg(row model.Message) domain.Message {
 }
 
 // extraData 统一校验消息扩展字段，避免非法 JSON 破坏数据库约束。
-func extraData(value json.RawMessage) string {
-	if len(value) == 0 || !json.Valid(value) {
-		return "{}"
+func extraData(value json.RawMessage) (string, error) {
+	if len(value) == 0 {
+		return "{}", nil
 	}
-	return string(value)
+	if !json.Valid(value) {
+		return "", errors.New("invalid message extra data")
+	}
+	return string(value), nil
 }
