@@ -1,0 +1,36 @@
+# docker-compose.ai-chat.yml 提供 AI Chat 后端的本地 MySQL 和 Redis 依赖。
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: ai-chat-mysql
+    environment:
+      MYSQL_DATABASE: ai_chat
+      MYSQL_USER: ai_chat
+      MYSQL_PASSWORD: ai_chat_dev
+      MYSQL_ROOT_PASSWORD: root_dev
+    ports:
+      - "3307:3306"
+    volumes:
+      - ai-chat-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-hai-chat-mysql", "-uai_chat", "-pai_chat_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-chat-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - ai-chat-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  ai-chat-mysql:
+  ai-chat-redis:

@@ -140,6 +140,7 @@ DONE        已完成
 - 2026-09-15 生成完成落库增加 `DoneWriter` 原子边界：GORM 环境在一个事务中创建 assistant 消息并将 generation 从 running 更新为 completed；兼容实现仍保留顺序写入路径。新增应用层测试验证不会重复创建 assistant 消息。真实 MySQL 事务回归仍待执行。
 - 2026-09-15 修正重新生成上下文：重新生成前读取原 assistant 的 `parent_id` 对应 user 消息，并拒绝缺失或非 user 父消息；真实 Provider 回归和候选变体持久化仍待完成。
 - 2026-09-15 完成无外部依赖启动验收：`go run ./cmd/api` 启动成功，`GET /healthz` 与 `GET /readyz` 均返回 200 并带 `X-Request-Id`，发送 SIGINT 后进程退出；该结果不替代 MySQL、Redis、Provider 和浏览器链路验收。
+- 2026-09-15 新增 `docker/docker-compose.ai-chat.yml`，提供 MySQL 8.4（宿主端口 3307）和 Redis 7（宿主端口 6380）及健康检查；`docker compose config` 通过，但当前 Docker daemon 未运行，真实依赖启动和集成回归待执行。
 
 - 之前追踪记录中的“完成”仅代表所述代码增量，不代表整个任务验收通过。T001、T002 修正为 DOING，真实数据基线仍缺失。
 - T005：注册/登录/当前用户/退出已有骨架，但默认签名密钥、账号版本和禁用状态的统一验证、退出后的令牌吊销、CSRF、Cookie 本地部署配置及错误分类仍需完善。不得按生产可用交付。
