@@ -104,6 +104,7 @@ func closeOnCancel(ctx context.Context, body io.ReadCloser, stop <-chan struct{}
 func parseEvent(value string) (provider.Event, error) {
 	var data struct {
 		Choices []struct {
+			Index int `json:"index"`
 			Delta struct {
 				Content string `json:"content"`
 			} `json:"delta"`
@@ -115,5 +116,6 @@ func parseEvent(value string) (provider.Event, error) {
 	if len(data.Choices) == 0 {
 		return provider.Event{Type: "delta"}, nil
 	}
-	return provider.Event{Type: "delta", Text: data.Choices[0].Delta.Content}, nil
+	choice := data.Choices[0]
+	return provider.Event{Type: "delta", Index: choice.Index, Text: choice.Delta.Content}, nil
 }

@@ -14,11 +14,13 @@ type Request struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
 	Stream   bool      `json:"stream"`
+	N        int       `json:"n,omitempty"`
 }
 
 // Event 表示一次生成中的增量或终止事件。
 type Event struct {
 	Type  string `json:"type"`
+	Index int    `json:"index"`
 	Text  string `json:"text,omitempty"`
 	Error string `json:"error,omitempty"`
 }
