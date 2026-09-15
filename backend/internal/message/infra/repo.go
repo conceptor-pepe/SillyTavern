@@ -46,6 +46,47 @@ func (r *Repo) Create(ctx context.Context, uid uint64, item domain.Message) (dom
 	return toMsg(row), nil
 }
 
+// ListVariants 查询当前用户消息的候选回复。
+func (r *Repo) ListVariants(ctx context.Context, uid, messageID uint64) ([]domain.Variant, error) {
+	var rows []model.MessageVariant
+	query := r.db.WithContext(ctx).Table("message_variants").
+		Joins("JOIN messages ON messages.id = message_variants.message_id").
+		Joins("JOIN conversations ON conversations.id = messages.conversation_id").
+		Where("message_variants.message_id = ? AND conversations.user_id = ?", messageID, uid).
+		Order("message_variants.variant_no ASC")
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]domain.Variant, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toVariant(row))
+	}
+	return out, nil
+}
+
+// CreateVariant 保存当前用户消息的候选回复。
+func (r *Repo) CreateVariant(ctx context.Context, uid uint64, item domain.Variant) (domain.Variant, error) {
+	owned, err := r.ownsMessage(ctx, uid, item.MessageID)
+	if err != nil {
+		return domain.Variant{}, err
+	}
+	if !owned {
+		return domain.Variant{}, errors.New("message not found")
+	}
+	extra, err := extraData(item.ExtraData)
+	if err != nil {
+		return domain.Variant{}, err
+	}
+	row := model.MessageVariant{
+		MessageID: item.MessageID, VariantNo: item.VariantNo,
+		Content: item.Content, ExtraData: extra,
+	}
+	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
+		return domain.Variant{}, err
+	}
+	return toVariant(row), nil
+}
+
 // Find 查询当前用户可见的一条消息。
 func (r *Repo) Find(ctx context.Context, uid, messageID uint64) (domain.Message, error) {
 	var row model.Message
@@ -96,6 +137,13 @@ func (r *Repo) owned(ctx context.Context, uid, messageID uint64) *gorm.DB {
 		Where("messages.id = ? AND conversations.user_id = ?", messageID, uid)
 }
 
+// ownsMessage 校验消息归属，供候选回复写入复用。
+func (r *Repo) ownsMessage(ctx context.Context, uid, messageID uint64) (bool, error) {
+	var count int64
+	err := r.owned(ctx, uid, messageID).Count(&count).Error
+	return count == 1, err
+}
+
 // mapMsgs 转换消息列表，避免暴露 GORM 模型。
 func mapMsgs(rows []model.Message) []domain.Message {
 	out := make([]domain.Message, 0, len(rows))
@@ -111,6 +159,14 @@ func toMsg(row model.Message) domain.Message {
 		ID: row.ID, ConversationID: row.ConversationID, ParentID: row.ParentID,
 		Role: row.Role, Content: row.Content, Status: row.Status,
 		VariantNo: row.VariantNo, ExtraData: []byte(row.ExtraData),
+	}
+}
+
+// toVariant 转换候选回复模型。
+func toVariant(row model.MessageVariant) domain.Variant {
+	return domain.Variant{
+		ID: row.ID, MessageID: row.MessageID, VariantNo: row.VariantNo,
+		Content: row.Content, ExtraData: []byte(row.ExtraData),
 	}
 }
 

@@ -18,6 +18,15 @@ type Message struct {
 	ExtraData      json.RawMessage `json:"extra_data,omitempty"`
 }
 
+// Variant 表示同一消息位置的一条候选回复。
+type Variant struct {
+	ID        uint64          `json:"id,string"`
+	MessageID uint64          `json:"message_id,string"`
+	VariantNo int             `json:"variant_no"`
+	Content   string          `json:"content"`
+	ExtraData json.RawMessage `json:"extra_data,omitempty"`
+}
+
 // ChatRepo 提供会话归属校验。
 type ChatRepo interface {
 	Owns(ctx context.Context, userID, chatID uint64) (bool, error)
@@ -27,6 +36,12 @@ type ChatRepo interface {
 type Repo interface {
 	List(ctx context.Context, userID, chatID uint64, page, size int) ([]Message, int64, error)
 	Create(ctx context.Context, userID uint64, item Message) (Message, error)
+}
+
+// VariantRepo 提供候选回复的持久化能力。
+type VariantRepo interface {
+	ListVariants(ctx context.Context, userID, messageID uint64) ([]Variant, error)
+	CreateVariant(ctx context.Context, userID uint64, item Variant) (Variant, error)
 }
 
 // Finder 提供按用户范围读取单条消息的能力。
