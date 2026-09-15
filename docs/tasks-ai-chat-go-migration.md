@@ -137,6 +137,7 @@ DONE        已完成
 - 2026-09-15 增加 `POST /api/v1/messages/:id/regenerate`：读取当前用户可见的 assistant 消息，以原消息父节点创建独立 generation，不覆盖旧消息；请求体必须显式传入模型，已通过全量测试、竞态检测、`go vet` 和 diff 检查。真实 Provider 参数配置和专用 HTTP 回归仍待完善。
 - 2026-09-15 补充重新生成空请求体 HTTP 测试，并将缺少模型分类为 `400 INVALID_BODY`，避免把客户端参数错误记录成内部故障。
 - 2026-09-15 规范审计修正生成 Handler 的 7 参数 `run` 方法，改用参数对象；补充 Provider 取消路径关闭响应体的忽略错误说明。全量测试、竞态检测、`go vet` 和 diff 检查通过。审计脚本剩余主要为分层错误返回和测试桩识别噪声，未据此添加重复日志。
+- 2026-09-16 生成完成落库增加 `DoneWriter` 原子边界：GORM 环境在一个事务中创建 assistant 消息并将 generation 从 running 更新为 completed；兼容实现仍保留顺序写入路径。新增应用层测试验证不会重复创建 assistant 消息。真实 MySQL 事务回归仍待执行。
 
 - 之前追踪记录中的“完成”仅代表所述代码增量，不代表整个任务验收通过。T001、T002 修正为 DOING，真实数据基线仍缺失。
 - T005：注册/登录/当前用户/退出已有骨架，但默认签名密钥、账号版本和禁用状态的统一验证、退出后的令牌吊销、CSRF、Cookie 本地部署配置及错误分类仍需完善。不得按生产可用交付。
@@ -146,7 +147,7 @@ DONE        已完成
 - T008：消息历史、用户消息、编辑删除和重新生成入口已建立；原消息不覆盖规则已接通，候选变体持久化、模型参数传递、幂等和真实数据库验证仍未完成。
 - T009：Provider Domain 和 OpenAI 兼容 SSE 基础实现已完成，并已接入环境配置；已覆盖成功增量、`[DONE]`、非 2xx、畸形 JSON 和取消读取，工具调用仍待补测。
 - T012：Provider 响应体已绑定请求上下文，取消时会主动关闭底层连接，并有取消测试；已增加 `DELETE /api/v1/generations/:id`、超时任务清理 Repository、服务内每分钟清理调度和带前置状态条件的原子状态迁移，专门调度测试仍待完成。
-- T010：生成任务 Domain、状态常量、GORM Repository 和 Provider 消费编排已建立；已能在完成后保存 assistant 消息并回写任务状态，尚未接入生成 HTTP/SSE 用例，也未完成跨消息事务。
+- T010：生成任务 Domain、状态常量、GORM Repository 和 Provider 消费编排已建立；GORM 生成完成路径已接入 assistant 消息与 generation 状态的事务协调，真实 MySQL 事务回归仍待完成。
 - T010：生成任务 Domain、状态常量、GORM Repository、状态迁移保护和 Provider 消费编排已建立；成功生命周期已有单测，跨消息事务和真实数据库测试仍待完成。
 - T011：生成编排和 Gin SSE Handler 已建立并在配置存在时由主服务装配，事件协议为 `message_start`、`message_delta`、`message_end`、`generation_error`；事件发送现检查请求上下文并用 Zap 记录断开错误，真实链路仍待完成。
 - 本轮 `go test -race ./...`、`go vet ./...` 通过；审计原始结果和 diff-aware 结果均仍有日志调用链识别告警，不能宣称全量规范审计通过。

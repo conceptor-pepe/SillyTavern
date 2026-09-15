@@ -35,6 +35,11 @@ type MessageWriter interface {
 	Create(ctx context.Context, userID uint64, item msgdomain.Message) (msgdomain.Message, error)
 }
 
+// DoneWriter 在同一事务中保存 assistant 消息并完成生成任务。
+type DoneWriter interface {
+	SaveDone(ctx context.Context, userID, generationID uint64, item msgdomain.Message, finished int64) (msgdomain.Message, error)
+}
+
 // NewRunner 创建生成编排器。
 func NewRunner(tasks *Service, p provider.Provider, messages MessageWriter) *Runner {
 	return &Runner{tasks: tasks, provider: p, messages: messages, stops: make(map[uint64]context.CancelFunc)}
@@ -78,10 +83,14 @@ func (r *Runner) RunStream(ctx context.Context, args RunArgs, send func(string) 
 	if err != nil {
 		return r.fail(ctx, args, err)
 	}
-	item, err = r.messages.Create(runCtx, args.UserID, msgdomain.Message{
+	msg := msgdomain.Message{
 		ConversationID: args.ConversationID, ParentID: args.ParentID,
 		Role: "assistant", Content: text, Status: "completed",
-	})
+	}
+	if writer, ok := r.messages.(DoneWriter); ok {
+		return writer.SaveDone(runCtx, args.UserID, args.GenerationID, msg, time.Now().Unix())
+	}
+	item, err = r.messages.Create(runCtx, args.UserID, msg)
 	if err != nil {
 		return r.fail(ctx, args, err)
 	}

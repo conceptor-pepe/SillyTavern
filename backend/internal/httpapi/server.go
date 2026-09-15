@@ -69,7 +69,7 @@ func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 		if cfg.ProviderURL != "" {
 			tasks := genapp.New(geninfra.NewRepo(conn))
 			provider := &providerinfra.OpenAI{URL: cfg.ProviderURL, Key: cfg.ProviderKey}
-			runner := genapp.NewRunner(tasks, provider, msginfra.NewRepo(conn))
+			runner := genapp.NewRunner(tasks, provider, geninfra.NewDoneWriter(conn))
 			genhttp.New(tasks, runner, genhttp.Deps{
 				Chats: chatinfra.NewRepo(conn), Chars: charinfra.NewRepo(conn), Msgs: msginfra.NewRepo(conn),
 			}, logger).Routes(engine, RequireAuth(cfg.AuthSecret))

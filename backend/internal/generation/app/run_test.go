@@ -61,6 +61,24 @@ func (r *msgRepo) Create(_ context.Context, _ uint64, item msgdomain.Message) (m
 	return item, nil
 }
 
+type doneRepo struct {
+	msgdomain.Message
+	calls int
+}
+
+// SaveDone 模拟消息和生成状态的原子落库边界。
+func (r *doneRepo) SaveDone(_ context.Context, _, _ uint64, item msgdomain.Message, _ int64) (msgdomain.Message, error) {
+	r.calls++
+	item.ID = 12
+	r.Message = item
+	return item, nil
+}
+
+// Create 保持 DoneWriter 同时满足消息写入接口。
+func (r *doneRepo) Create(_ context.Context, _ uint64, item msgdomain.Message) (msgdomain.Message, error) {
+	return item, nil
+}
+
 type waitStream struct{ closed chan struct{} }
 
 func (s *waitStream) Next(ctx context.Context) (provider.Event, error) {
@@ -110,6 +128,24 @@ func TestRunKeepsParent(t *testing.T) {
 	}
 	if writer.item.ID == 7 {
 		t.Fatal("generation overwrote the parent message")
+	}
+}
+
+// TestRunUsesDoneWriter 验证原子写入路径不会先创建重复 assistant 消息。
+func TestRunUsesDoneWriter(t *testing.T) {
+	writer := &doneRepo{}
+	runner := NewRunner(New(&taskRepo{}), fakeProvider{stream: &fakeStream{
+		events: []provider.Event{{Type: "delta", Text: "done"}, {Type: "done"}},
+	}}, writer)
+	item, err := runner.Run(context.Background(), RunArgs{
+		UserID: 1, ConversationID: 2, GenerationID: 3,
+		Request: provider.Request{Model: "test"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if writer.calls != 1 || item.ID != 12 || item.Content != "done" {
+		t.Fatalf("calls=%d item=%+v", writer.calls, item)
 	}
 }
 
