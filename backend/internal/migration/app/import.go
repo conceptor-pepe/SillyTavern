@@ -76,19 +76,44 @@ type Report struct {
 	Errors      []string
 }
 
+// ImportArgs 保存聊天迁移所需的输入。
+type ImportArgs struct {
+	UserID    uint64
+	DefaultID uint64
+	Mapping   map[string]uint64
+	Files     []string
+	Reader    Reader
+	Chats     ChatWriter
+	Messages  MessageWriter
+}
+
 // Import 批量读取旧文件并写入新会话消息。
 func Import(ctx context.Context, userID, characterID uint64, files []string, reader Reader, chats ChatWriter, messages MessageWriter) Report {
+	return ImportMap(ctx, ImportArgs{
+		UserID: userID, DefaultID: characterID, Files: files,
+		Reader: reader, Chats: chats, Messages: messages,
+	})
+}
+
+// ImportMap 按聊天文件映射角色编号，缺少映射时使用默认角色编号。
+func ImportMap(ctx context.Context, args ImportArgs) Report {
 	report := Report{}
-	for _, path := range files {
+	for _, path := range args.Files {
+		characterID, err := mapCharacter(path, args.DefaultID, args.Mapping)
+		if err != nil {
+			report.Files++
+			report.Errors = append(report.Errors, path+": "+err.Error())
+			continue
+		}
 		report.Files++
-		if batch, ok := chats.(BatchWriter); ok {
-			items, err := reader.Read(path)
+		if batch, ok := args.Chats.(BatchWriter); ok {
+			items, err := args.Reader.Read(path)
 			if err != nil {
 				report.Errors = append(report.Errors, path+": "+err.Error())
 				continue
 			}
 			report.SourceItems += len(items)
-			created, count, err := batch.ImportBatch(ctx, userID, characterID, filepath.Base(path), items)
+			created, count, err := batch.ImportBatch(ctx, args.UserID, characterID, filepath.Base(path), items)
 			if err != nil {
 				report.Errors = append(report.Errors, path+": "+err.Error())
 				continue
@@ -101,11 +126,27 @@ func Import(ctx context.Context, userID, characterID uint64, files []string, rea
 			}
 			continue
 		}
-		if err := importFile(ctx, userID, characterID, path, reader, chats, messages, &report); err != nil {
+		if err := importFile(ctx, args.UserID, characterID, path, args.Reader, args.Chats, args.Messages, &report); err != nil {
 			report.Errors = append(report.Errors, path+": "+err.Error())
 		}
 	}
 	return report
+}
+
+// mapCharacter 强制多角色迁移显式指定角色，防止会话归属被静默写错。
+func mapCharacter(path string, defaultID uint64, mapping map[string]uint64) (uint64, error) {
+	if id := mapping[filepath.Base(path)]; id > 0 {
+		return id, nil
+	}
+	if defaultID > 0 {
+		return defaultID, nil
+	}
+	return 0, errors.New("character mapping is required")
+}
+
+// MapCharacter 校验聊天文件对应的角色编号。
+func MapCharacter(path string, defaultID uint64, mapping map[string]uint64) (uint64, error) {
+	return mapCharacter(path, defaultID, mapping)
 }
 
 // importFile 迁移单个文件，单文件失败不影响其他文件。

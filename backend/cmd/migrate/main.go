@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -32,8 +33,9 @@ func main() {
 	}
 	defer logger.Sync()
 	root := required("AI_CHAT_DATA_ROOT")
+	mapping := loadMap()
 	if os.Getenv("AI_CHAT_MIGRATE_DRY_RUN") == "1" {
-		dryRun(root, logger)
+		dryRun(root, mapping, logger)
 		return
 	}
 	userID := optionalNumber("AI_CHAT_MIGRATE_USER_ID")
@@ -41,11 +43,11 @@ func main() {
 	if cfg.MySQLDSN == "" {
 		logger.Fatal("migration config missing", zap.String("key", "AI_CHAT_MYSQL_DSN"))
 	}
-	run(root, cfg.MySQLDSN, userID, characterID, logger)
+	run(root, cfg.MySQLDSN, userID, characterID, mapping, logger)
 }
 
 // dryRun 只读取旧文件并输出迁移前的数据质量报告。
-func dryRun(root string, logger *zap.Logger) {
+func dryRun(root string, mapping map[string]uint64, logger *zap.Logger) {
 	files, err := migrationinfra.ScanChats(root)
 	if err != nil {
 		logger.Fatal("migration files scan failed", zap.Error(err))
@@ -53,6 +55,11 @@ func dryRun(root string, logger *zap.Logger) {
 	total := 0
 	errorsCount := 0
 	for _, file := range files {
+		if _, mapErr := migrationapp.MapCharacter(file.Path, 0, mapping); mapErr != nil {
+			errorsCount++
+			logger.Error("migration character mapping missing", zap.String("path", file.Path), zap.Error(mapErr))
+			continue
+		}
 		items, readErr := migrationinfra.ReadChat(file.Path)
 		if readErr != nil {
 			errorsCount++
@@ -98,7 +105,7 @@ func dryUsers(root string, logger *zap.Logger) {
 }
 
 // run 连接数据库、扫描文件并输出迁移统计。
-func run(root, dsn string, userID, characterID uint64, logger *zap.Logger) {
+func run(root, dsn string, userID, characterID uint64, mapping map[string]uint64, logger *zap.Logger) {
 	ctx := context.Background()
 	conn, err := db.OpenMySQL(ctx, dsn)
 	if err != nil {
@@ -124,9 +131,11 @@ func run(root, dsn string, userID, characterID uint64, logger *zap.Logger) {
 		logger.Fatal("migration target user invalid", zap.Uint64("user_id", userID), zap.Error(err))
 	}
 	cardCreated, cardSkipped := importCards(ctx, root, userID, writer, logger)
-	report := migrationapp.Import(ctx, userID, characterID, paths,
-		migrationinfra.LegacyReaderAdapter(migrationinfra.ReadChat), writer,
-		migrationinfra.MessageWriterAdapter{Writer: writer})
+	report := migrationapp.ImportMap(ctx, migrationapp.ImportArgs{
+		UserID: userID, DefaultID: characterID, Mapping: mapping, Files: paths,
+		Reader: migrationinfra.LegacyReaderAdapter(migrationinfra.ReadChat),
+		Chats:  writer, Messages: migrationinfra.MessageWriterAdapter{Writer: writer},
+	})
 	logger.Info("migration finished", zap.Int("files", report.Files),
 		zap.Int("source_items", report.SourceItems), zap.Int("chats", report.Chats),
 		zap.Int("written", report.Written), zap.Int("skipped", report.Skipped),
@@ -143,6 +152,24 @@ func run(root, dsn string, userID, characterID uint64, logger *zap.Logger) {
 		return
 	}
 	logCheck(logger, check)
+}
+
+// loadMap 读取聊天文件到角色编号的显式映射。
+func loadMap() map[string]uint64 {
+	value := os.Getenv("AI_CHAT_MIGRATE_MAP")
+	if value == "" {
+		return nil
+	}
+	var result map[string]uint64
+	if err := json.Unmarshal([]byte(value), &result); err != nil {
+		panic(errors.New("AI_CHAT_MIGRATE_MAP must be valid JSON"))
+	}
+	for key, id := range result {
+		if key == "" || id == 0 {
+			panic(errors.New("AI_CHAT_MIGRATE_MAP contains invalid entry"))
+		}
+	}
+	return result
 }
 
 // checkData 执行迁移后的目标数据校验。
