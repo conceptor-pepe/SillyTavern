@@ -80,7 +80,12 @@ func (h *Handler) regenerate(c *gin.Context) {
 		h.fail(c, uid, messageID, errors.New("assistant message not found"))
 		return
 	}
-	prompt, err := h.prompt(c, uid, old.ConversationID, "")
+	content, err := h.parentText(c, finder, uid, old.ParentID)
+	if err != nil {
+		h.fail(c, uid, messageID, err)
+		return
+	}
+	prompt, err := h.prompt(c, uid, old.ConversationID, content)
 	if err != nil {
 		h.fail(c, uid, messageID, err)
 		return
@@ -91,6 +96,21 @@ func (h *Handler) regenerate(c *gin.Context) {
 		return
 	}
 	h.run(c, runArgs{uid: uid, chatID: old.ConversationID, task: task, parentID: old.ParentID, model: in.Model, prompt: prompt})
+}
+
+// parentText 重新生成必须基于原 user 消息，避免只把旧 assistant 当上下文。
+func (h *Handler) parentText(c *gin.Context, finder msgdomain.Finder, uid uint64, parentID *uint64) (string, error) {
+	if parentID == nil {
+		return "", nil
+	}
+	parent, err := finder.Find(c.Request.Context(), uid, *parentID)
+	if err != nil {
+		return "", errors.New("parent message not found")
+	}
+	if parent.Role != "user" || parent.Content == "" {
+		return "", errors.New("parent user message required")
+	}
+	return parent.Content, nil
 }
 
 // find 返回当前用户可见的生成任务状态。
