@@ -107,9 +107,9 @@ func dryUsers(root string, logger *zap.Logger) {
 // run 连接数据库、扫描文件并输出迁移统计。
 func run(root, dsn string, userID, characterID uint64, mapping map[string]uint64, logger *zap.Logger) {
 	ctx := context.Background()
-	conn, err := db.OpenMySQL(ctx, dsn)
+	conn, err := db.OpenMySQL(ctx, dsn, logger)
 	if err != nil {
-		logger.Fatal("migration database open failed", zap.Error(err))
+		logger.Fatal("migration database open failed", zap.Error(logx.SafeError(err)))
 	}
 	if err := db.Migrate(ctx, conn); err != nil {
 		logger.Fatal("migration database setup failed", zap.Error(err))

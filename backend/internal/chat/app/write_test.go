@@ -51,7 +51,7 @@ func (f *fakeChatRepo) Delete(context.Context, uint64, uint64) error {
 // TestRename 验证标题会被清理后传给仓储。
 func TestRename(t *testing.T) {
 	repo := &fakeChatRepo{}
-	err := NewWrite(repo, nil).Rename(context.Background(), 1, 2, "  新标题  ")
+	err := NewWrite(repo, nil, repo).Rename(context.Background(), 1, 2, "  新标题  ")
 	if err != nil || repo.title != "新标题" || repo.calls != 1 {
 		t.Fatalf("err=%v title=%q calls=%d", err, repo.title, repo.calls)
 	}
@@ -60,7 +60,7 @@ func TestRename(t *testing.T) {
 // TestRenameEmpty 验证空标题会被拒绝且不访问仓储。
 func TestRenameEmpty(t *testing.T) {
 	repo := &fakeChatRepo{}
-	err := NewWrite(repo, nil).Rename(context.Background(), 1, 2, " \t ")
+	err := NewWrite(repo, nil, repo).Rename(context.Background(), 1, 2, " \t ")
 	if err == nil || repo.calls != 0 {
 		t.Fatalf("err=%v calls=%d", err, repo.calls)
 	}
@@ -70,7 +70,7 @@ func TestRenameEmpty(t *testing.T) {
 func TestRenameRepoErr(t *testing.T) {
 	want := errors.New("write failed")
 	repo := &fakeChatRepo{err: want}
-	err := NewWrite(repo, nil).Rename(context.Background(), 1, 2, "标题")
+	err := NewWrite(repo, nil, repo).Rename(context.Background(), 1, 2, "标题")
 	if !errors.Is(err, want) {
 		t.Fatalf("err=%v want=%v", err, want)
 	}

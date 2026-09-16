@@ -174,7 +174,8 @@ func mapMsgs(rows []model.Message) []domain.Message {
 // toMsg 转换单条消息。
 func toMsg(row model.Message) domain.Message {
 	return domain.Message{
-		ID: row.ID, ConversationID: row.ConversationID, ParentID: row.ParentID,
+		CreatedAt: row.CreatedAt,
+		ID:        row.ID, ConversationID: row.ConversationID, ParentID: row.ParentID,
 		SourceVariantID: row.SourceVariantID,
 		Role:            row.Role, Content: row.Content, Status: row.Status,
 		VariantNo: row.VariantNo, ExtraData: []byte(row.ExtraData),

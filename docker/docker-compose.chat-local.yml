@@ -1,0 +1,64 @@
+# 独立本机验收环境；不要使用此自签名配置直接公开到互联网。
+name: ai-chat-local
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ai_chat
+      MYSQL_USER: ai_chat
+      MYSQL_PASSWORD: ${CHAT_DB_PASSWORD:?initialize local deployment first}
+      MYSQL_ROOT_PASSWORD: ${CHAT_ROOT_PASSWORD:?initialize local deployment first}
+    volumes:
+      - mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql -h127.0.0.1 -uai_chat -e 'SELECT 1' ai_chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  api:
+    build:
+      context: ..
+      dockerfile: docker/chat-api.Dockerfile
+    environment:
+      AI_CHAT_ADDR: ":8080"
+      AI_CHAT_MYSQL_DSN: "ai_chat:${CHAT_DB_PASSWORD}@tcp(mysql:3306)/ai_chat?parseTime=true&charset=utf8mb4"
+      AI_CHAT_REDIS_ADDR: redis:6379
+      AI_CHAT_AUTH_SECRET: ${AI_CHAT_AUTH_SECRET:?initialize local deployment first}
+      AI_CHAT_PROVIDER_URL: ${AI_CHAT_PROVIDER_URL:?provider endpoint required}
+      AI_CHAT_PROVIDER_KEY: ${AI_CHAT_PROVIDER_KEY:?provider key required}
+      AI_CHAT_PROVIDER_MODEL: ${AI_CHAT_PROVIDER_MODEL:?provider model required}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 20s
+    restart: unless-stopped
+  web:
+    build:
+      context: ..
+      dockerfile: docker/chat-web.Dockerfile
+    ports:
+      - "127.0.0.1:8443:443"
+    volumes:
+      - ../data/go-local/tls:/etc/nginx/tls:ro
+    depends_on: [api]
+    restart: unless-stopped
+volumes:
+  mysql:
+  redis:

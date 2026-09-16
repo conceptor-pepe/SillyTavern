@@ -75,6 +75,9 @@ func (r *httpTasks) Move(_ context.Context, _ uint64, _ uint64, _ []string, patc
 }
 func (r *httpTasks) Expire(context.Context, int64) (int64, error) { return 0, r.err }
 
+// CancelChat 提供删除编排所需的仓储能力，HTTP 生成测试不模拟批量持久化。
+func (r *httpTasks) CancelChat(context.Context, uint64, uint64, int64) error { return r.err }
+
 // TestFind 验证生成任务状态可以按当前用户查询。
 func TestFind(t *testing.T) {
 	tasks := &httpTasks{item: domain.Generation{ID: 8, UserID: 7, Status: domain.StatusRunning}}
@@ -131,10 +134,14 @@ func (httpMsgs) Create(_ context.Context, _ uint64, item msgdomain.Message) (msg
 }
 
 // makeEngine 创建带固定测试身份的生成路由。
-func makeEngine(tasks *httpTasks, p provider.Provider) *gin.Engine {
+func makeEngine(tasks *httpTasks, p provider.Provider, models ...string) *gin.Engine {
 	engine := gin.New()
+	model := ""
+	if len(models) > 0 {
+		model = models[0]
+	}
 	runner := genapp.NewRunner(genapp.New(tasks), p, httpMsgs{})
-	New(genapp.New(tasks), runner, Deps{Chats: httpChats{owned: true}, Chars: httpChars{}, Msgs: httpMessages{}}, zap.NewNop()).Routes(engine, func(c *gin.Context) {
+	New(genapp.New(tasks), runner, Deps{DefaultModel: model, Chats: httpChats{owned: true}, Chars: httpChars{}, Msgs: httpMessages{}}, zap.NewNop()).Routes(engine, func(c *gin.Context) {
 		c.Set("user_id", uint64(7))
 		c.Next()
 	})
@@ -166,7 +173,7 @@ func TestStream(t *testing.T) {
 	}})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/chats/3/generations", strings.NewReader(`{"model":"demo"}`))
 	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
+	rec := newFrameRecorder()
 	engine.ServeHTTP(rec, req)
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(body, "event:message_start") ||

@@ -4,7 +4,11 @@ package domain
 import (
 	"context"
 	"errors"
+	"time"
 )
+
+// RunLimit 是生成执行时限，运行取消与存储补偿使用同一标准。
+const RunLimit = 10 * time.Minute
 
 // 生成任务状态。
 const (
@@ -41,4 +45,5 @@ type Repo interface {
 	Update(ctx context.Context, userID, id uint64, patch Generation) error
 	Move(ctx context.Context, userID, id uint64, from []string, patch Generation) error
 	Expire(ctx context.Context, before int64) (int64, error)
+	CancelChat(ctx context.Context, userID, chatID uint64, finished int64) error
 }

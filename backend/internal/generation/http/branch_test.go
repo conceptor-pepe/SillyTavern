@@ -69,7 +69,7 @@ func TestBranchPrompt(t *testing.T) {
 	for _, path := range []string{"/api/v1/chats/3/generations", "/api/v1/messages/9/regenerate"} {
 		p := &branchProvider{}
 		engine := branchEngine(p, branchMessages{}, &httpTasks{})
-		rec := httptest.NewRecorder()
+		rec := newFrameRecorder()
 		req := httptest.NewRequest("POST", path,
 			strings.NewReader(`{"model":"demo","parent_id":"2","content":"question"}`))
 		req.Header.Set("Content-Type", "application/json")

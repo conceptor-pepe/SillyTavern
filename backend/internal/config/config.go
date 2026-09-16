@@ -14,6 +14,8 @@ type Config struct {
 	ProviderURL   string
 	ProviderKey   string
 	ProviderModel string
+	TLSCert       string
+	TLSKey        string
 }
 
 // Load 读取环境变量并填充本地开发默认值。
@@ -28,6 +30,8 @@ func Load() Config {
 		ProviderURL:   os.Getenv("AI_CHAT_PROVIDER_URL"),
 		ProviderKey:   os.Getenv("AI_CHAT_PROVIDER_KEY"),
 		ProviderModel: env("AI_CHAT_PROVIDER_MODEL", "gpt-4o-mini"),
+		TLSCert:       os.Getenv("AI_CHAT_TLS_CERT"),
+		TLSKey:        os.Getenv("AI_CHAT_TLS_KEY"),
 	}
 }
 

@@ -76,7 +76,7 @@ func chatRequest(store *chatStore, path string, uid uint64) *httptest.ResponseRe
 		c.Set("request_id", "chat-test")
 		c.Next()
 	})
-	chathttp.New(store, fakeChars{}, zap.NewNop()).Routes(engine, httpapi.RequireAuth("test-secret"))
+	chathttp.New(store, fakeChars{}, store, zap.NewNop()).Routes(engine, httpapi.RequireAuth("test-secret"))
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	if uid != 0 {
 		req.Header.Set("Authorization", "Bearer "+auth.Sign("test-secret", uid, 1, time.Now()))
@@ -173,7 +173,7 @@ func TestChatCreate(t *testing.T) {
 		c.Set("request_id", "chat-test")
 		c.Next()
 	})
-	chathttp.New(store, fakeChars{}, zap.NewNop()).Routes(engine, httpapi.RequireAuth("test-secret"))
+	chathttp.New(store, fakeChars{}, store, zap.NewNop()).Routes(engine, httpapi.RequireAuth("test-secret"))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/chats",
 		strings.NewReader(`{"character_id":11,"title":"new chat"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -189,7 +189,7 @@ func TestChatCreate(t *testing.T) {
 func TestChatDelete(t *testing.T) {
 	store := &chatStore{}
 	engine := gin.New()
-	chathttp.New(store, fakeChars{}, zap.NewNop()).Routes(engine, httpapi.RequireAuth("test-secret"))
+	chathttp.New(store, fakeChars{}, store, zap.NewNop()).Routes(engine, httpapi.RequireAuth("test-secret"))
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/chats/3", nil)
 	req.Header.Set("Authorization", "Bearer "+auth.Sign("test-secret", 7, 1, time.Now()))
 	rec := httptest.NewRecorder()

@@ -7,17 +7,20 @@ import (
 
 	msgdomain "ai-chat/backend/internal/message/domain"
 	"ai-chat/backend/internal/model"
+	"ai-chat/backend/internal/port"
+	store "ai-chat/backend/internal/repo"
 	"gorm.io/gorm"
 )
 
 // DoneWriter 是生成完成事务写入器。
 type DoneWriter struct {
-	db *gorm.DB
+	db    *gorm.DB
+	chats port.ChatGate
 }
 
 // NewDoneWriter 创建生成完成事务写入器。
-func NewDoneWriter(db *gorm.DB) *DoneWriter {
-	return &DoneWriter{db: db}
+func NewDoneWriter(db *gorm.DB, chats port.ChatGate) *DoneWriter {
+	return &DoneWriter{db: db, chats: chats}
 }
 
 // Create 保存非事务兼容路径使用的消息。
@@ -27,7 +30,10 @@ func (w *DoneWriter) Create(ctx context.Context, userID uint64, item msgdomain.M
 		Role: item.Role, Content: item.Content, Status: item.Status,
 		VariantNo: item.VariantNo, ExtraData: "{}",
 	}
-	if err := w.db.WithContext(ctx).Create(&row).Error; err != nil {
+	err := w.chats.WithChat(ctx, userID, item.ConversationID, func(ctx context.Context) error {
+		return store.DB(ctx, w.db).Create(&row).Error
+	})
+	if err != nil {
 		return msgdomain.Message{}, err
 	}
 	return msgdomain.Message{
@@ -40,7 +46,8 @@ func (w *DoneWriter) Create(ctx context.Context, userID uint64, item msgdomain.M
 // SaveDone 在同一事务中保存 assistant 消息并更新 generation。
 func (w *DoneWriter) SaveDone(ctx context.Context, userID, generationID uint64, item msgdomain.Message, finished int64) (msgdomain.Message, error) {
 	var out msgdomain.Message
-	err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := w.chats.WithChat(ctx, userID, item.ConversationID, func(ctx context.Context) error {
+		tx := store.DB(ctx, w.db)
 		row := model.Message{
 			ConversationID: item.ConversationID, ParentID: item.ParentID,
 			Role: item.Role, Content: item.Content, Status: item.Status,

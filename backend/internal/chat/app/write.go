@@ -16,13 +16,14 @@ type CharRepo interface {
 
 // Write 保存会话写入依赖。
 type Write struct {
-	chats domain.Repo
-	chars CharRepo
+	chats  domain.Repo
+	chars  CharRepo
+	remove Deleter
 }
 
 // NewWrite 创建会话写入用例。
-func NewWrite(chats domain.Repo, chars CharRepo) *Write {
-	return &Write{chats: chats, chars: chars}
+func NewWrite(chats domain.Repo, chars CharRepo, remove Deleter) *Write {
+	return &Write{chats: chats, chars: chars, remove: remove}
 }
 
 // Create 创建属于当前用户的会话。
@@ -48,7 +49,7 @@ func (w *Write) Delete(ctx context.Context, userID, id uint64) error {
 	if userID == 0 || id == 0 {
 		return errors.New("invalid conversation")
 	}
-	return w.chats.Delete(ctx, userID, id)
+	return w.remove.Delete(ctx, userID, id)
 }
 
 // Rename 修改当前用户会话标题。

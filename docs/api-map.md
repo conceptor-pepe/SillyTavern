@@ -126,17 +126,68 @@ generation_error {"message":"generation failed"}
 - `DELETE /api/v1/chats/:id/favorite`：取消收藏，重复调用保持成功。
 - `POST /api/v1/messages/:id/regenerate`：请求体传入 `{ "model": "provider-model" }`，基于原 assistant 消息的父节点创建新回复，不覆盖原消息。
 
+### 生成与删除并发
+
+2026-09-16，本节列出七个受影响的现有登录入口，不增加接口或参数：
+
+| 方法 | 路径 | Handler | 本次约束 |
+|---|---|---|---|
+| POST | `/api/v1/chats/:id/generations` | `Handler.stream` | 创建事务再次锁定并检查当前用户的未删除会话 |
+| POST | `/api/v1/messages/:id/regenerate` | `Handler.regenerate` | 复用同一生成创建事务及完成事务 |
+| DELETE | `/api/v1/chats/:id` | `Handler.remove` | 删除、清理会话收藏、取消未结束任务同事务提交 |
+| PUT | `/api/v1/chats/:id/favorite` | `Handler.favorite` | 会话锁内收藏，已删除会话返回 404 |
+| DELETE | `/api/v1/chats/:id/favorite` | `Handler.favorite` | 可见会话取消收藏幂等，已删除会话返回 404 |
+| GET | `/api/v1/generations/:id` | `Handler.find` | 已删除会话关联任务返回 404 |
+| DELETE | `/api/v1/generations/:id` | `Handler.cancel` | 删除已取消的任务再次取消返回 404 |
+
+- 前置查询成功后若会话先被删除，创建返回 404：
+  `{"code":"NOT_FOUND","message":"chat not found"}`，不启动 SSE。
+- 完成事务也检查会话。流已开始后会话被删除，迟到完成不会保存消息或候选，
+  失败沿现有 `generation_error` 路径返回，不能再修改已发送的 HTTP 状态码。
+- 删除之前提交的完整回复保留历史存储事实，消息查询继续过滤已删除会话。
+- 会话删除无请求体；成功返回 200 和现有 `reply.OK` 空对象数据。
+  重复删除及其他用户会话删除保持 200 且无副作用，不暴露归属；事务失败返回 500。
+- 删除仅清理当前用户、当前会话且 kind=chat 的收藏，只取消 pending/running；
+  已完成、失败、取消任务保留原有消息关联、错误和结束时间。任一步失败整体回滚。
+- 任务启动在同一会话锁下检查可见性；删除先提交则不能转 running。
+  启动先提交的执行可能已获准调用 Provider，删除通过任务监听关闭连接，
+  不承诺删除响应时远端已经停止，也不承诺从未发出远端请求。
+- 待确认：独立进程、HTTP/2 和代理环境尚未验收；同进程两套服务实例的真实网络测试已通过。
+- 代码依据：`chat/infra/gate.go` 的 `WithChat`，`generation/infra/repo.go` 的 `Create`，
+  `generation/infra/done.go` 的 `SaveDone`，`generation/http/handler.go` 的 `fail`；
+  `chat/http/routes.go`、`chat/http/handler.go` 的 `remove/favorite`、
+  `chat/app/remove.go` 的 `Delete`、`chat/infra/delete.go`、`chat/infra/favorite.go`，
+  `generation/infra/chat.go` 的 `CancelChat`、`generation/infra/repo.go` 的 `Find/Move`。
+
 ### 取消生成
 
-`DELETE /api/v1/generations/:id` 使用现有登录鉴权中间件，无请求体。路径 `id` 必须是正整数。
+本次更新 1 个已有接口，不新增路由或响应字段：
+
+| 方法 | 路径 | Handler | 鉴权 |
+|---|---|---|---|
+| DELETE | `/api/v1/generations/:id` | `Handler.cancel` | `RequireAuth`，Cookie 优先、Bearer 其次 |
+
+无请求体。路径 `id` 必须是正整数；未登录返回 401。生产装配需配置 MySQL 和 Provider URL 才注册生成路由。
 
 - 只允许当前用户将 pending/running 任务更新为 cancelled，成功返回 204，无响应体。
 - 数据库条件更新成功后才中断本机注册的 Provider 请求；更新失败不得中断它。
+- 任务运行于其他实例时，原实例每秒通过生成域查询 MySQL 状态，每次查询时限两秒；
+  发现非 running 状态或查询失败后取消上游上下文。204 表示取消已持久化，不表示远端连接已经关闭。
+- 跨实例停止不是即时广播，不承诺一秒内断连；调度、数据库延迟和 SSE 客户端写阻塞均影响收尾。
+  完成事务继续检查 running，取消先提交时不保存 assistant 消息和候选。
 - 不存在、越权或已结束（含重复取消）的任务统一返回 404：`{"code":"NOT_FOUND","message":"generation not cancellable"}`。
 - 参数错误返回 400 `INVALID_QUERY`；数据库错误返回 500 `INTERNAL_ERROR`。此接口错误响应仍为 `code/message` 对象，尚未统一到带 `data/request_id` 的信封。
 - 证据：`generation/http/handler.go` 的 `Routes`、`readIDs`，`generation/http/cancel.go`，
-  `generation/app/task.go` 的 `Cancel`，`generation/infra/repo.go` 的 `Move`。
-- 待确认：真实数据库竞态回归、跨实例 Provider 取消尚未完成；当前中断注册表为进程内状态。
+  `generation/app/task.go` 的 `Cancel`，`generation/infra/repo.go` 的 `Move`，
+  `generation/app/watch.go` 的 `watchTask/checkTask`、`generation/app/run.go` 的 `RunEvents`，
+  `httpapi/server.go` 的 `connect`、`httpapi/auth.go` 的 `RequireAuth/readToken`。
+- 验证：真实 MySQL 竞争测试及两套独立服务装配的远端取消/超时清理已通过，
+  详见 `docs/generation-cancel-verification.md`。
+- SSE 单帧写入和刷新已有两秒时限，真实 TCP/TLS 慢读收尾通过测试；
+  代码依据为 `generation/http/stream.go` 的 `writeFrame`，不等同于整个请求的退出时限。
+- 会话删除联动已通过真实 TLS/MySQL 两套服务实例测试，详见 `docs/chat-lifecycle-verification.md`。
+- 待确认：独立操作系统进程、多机部署、真实外部 Provider、HTTP/2 与代理部署、
+  慢读与停机组合尚未验收。
 
 ## 6. 生成入口证据
 

@@ -42,11 +42,20 @@ func (s *Service) Cancel(ctx context.Context, userID, id uint64) error {
 	})
 }
 
-// Expire 清理超过时限仍在运行的任务。
+// CancelChat 由会话删除事务调用，取消全部未结束任务但不覆盖终态。
+func (s *Service) CancelChat(ctx context.Context, userID, chatID uint64) error {
+	if userID == 0 || chatID == 0 {
+		return domain.ErrNotFound
+	}
+	return s.repo.CancelChat(ctx, userID, chatID, time.Now().Unix())
+}
+
+// Expire 清理超过时限仍在等待或运行的任务，不改写已有终态。
 func (s *Service) Expire(ctx context.Context, before int64) (int64, error) {
 	return s.repo.Expire(ctx, before)
 }
 
+// ptr 保留任务时间字段的可空语义，区分未发生和零值。
 func ptr(value int64) *int64 { return &value }
 
 // Start 将待执行任务置为运行中。

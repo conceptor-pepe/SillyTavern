@@ -23,7 +23,7 @@ type Handler struct {
 }
 
 // New 创建会话 Handler。
-func New(repo domain.Repo, chars app.CharRepo, logger *zap.Logger, deps ...any) *Handler {
+func New(repo domain.Repo, chars app.CharRepo, remove app.Deleter, logger *zap.Logger, deps ...any) *Handler {
 	var favorite app.FavoriteRepo
 	var recent app.RecentRepo
 	for _, dep := range deps {
@@ -34,7 +34,7 @@ func New(repo domain.Repo, chars app.CharRepo, logger *zap.Logger, deps ...any) 
 			recent = value
 		}
 	}
-	return &Handler{query: app.NewQuery(repo), recent: app.NewRecent(recent), write: app.NewWrite(repo, chars), fav: app.NewFavorite(favorite), logger: logger}
+	return &Handler{query: app.NewQuery(repo), recent: app.NewRecent(recent), write: app.NewWrite(repo, chars, remove), fav: app.NewFavorite(favorite), logger: logger}
 }
 
 // list 返回当前用户的会话分页。

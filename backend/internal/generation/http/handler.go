@@ -10,6 +10,7 @@ import (
 	chatdomain "ai-chat/backend/internal/chat/domain"
 	"ai-chat/backend/internal/generation/app"
 	"ai-chat/backend/internal/generation/domain"
+	"ai-chat/backend/internal/logx"
 	msgdomain "ai-chat/backend/internal/message/domain"
 	provider "ai-chat/backend/internal/provider/domain"
 	"github.com/gin-gonic/gin"
@@ -18,19 +19,21 @@ import (
 
 // Handler 保存生成用例和日志依赖。
 type Handler struct {
-	tasks  *app.Service
-	runner *app.Runner
-	chats  chatdomain.Repo
-	chars  chardomain.Repo
-	msgs   msgdomain.Repo
-	logger *zap.Logger
+	tasks        *app.Service
+	runner       *app.Runner
+	chats        chatdomain.Repo
+	chars        chardomain.Repo
+	msgs         msgdomain.Repo
+	logger       *zap.Logger
+	defaultModel string
 }
 
 // Deps 保存生成 Handler 的跨域查询依赖。
 type Deps struct {
-	Chats chatdomain.Repo
-	Chars chardomain.Repo
-	Msgs  msgdomain.Repo
+	DefaultModel string
+	Chats        chatdomain.Repo
+	Chars        chardomain.Repo
+	Msgs         msgdomain.Repo
 }
 
 // runArgs 保存 SSE 生成执行所需参数，避免 Handler 方法参数过多。
@@ -46,7 +49,7 @@ type runArgs struct {
 
 // New 创建生成 SSE Handler。
 func New(tasks *app.Service, runner *app.Runner, deps Deps, logger *zap.Logger) *Handler {
-	return &Handler{tasks: tasks, runner: runner, chats: deps.Chats, chars: deps.Chars, msgs: deps.Msgs, logger: logger}
+	return &Handler{tasks: tasks, runner: runner, chats: deps.Chats, chars: deps.Chars, msgs: deps.Msgs, logger: logger, defaultModel: deps.DefaultModel}
 }
 
 // Routes 注册生成接口。
@@ -68,6 +71,7 @@ func (h *Handler) regenerate(c *gin.Context) {
 		Model string `json:"model"`
 		N     int    `json:"n" binding:"gte=0,lte=4"`
 	}
+	in.Model = h.defaultModel
 	if err := c.ShouldBindJSON(&in); err != nil || in.Model == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_BODY", "message": "model is required"})
 		return
@@ -132,6 +136,7 @@ func (h *Handler) stream(c *gin.Context) {
 		Messages []provider.Message `json:"messages"`
 		ParentID *uint64            `json:"parent_id,string"`
 	}
+	in.Model = h.defaultModel
 	if err := c.ShouldBindJSON(&in); err != nil || in.Model == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_BODY", "message": "invalid body"})
 		return
@@ -160,6 +165,7 @@ func (h *Handler) run(c *gin.Context, args runArgs) {
 	h.open(c)
 	if err := h.send(c, "message_start", gin.H{"generation_id": args.task.ID}); err != nil {
 		h.logSend(args.uid, args.task.ID, err)
+		h.cancelStart(c, args)
 		return
 	}
 	item, err := h.runner.RunEvents(c.Request.Context(), app.RunArgs{
@@ -171,7 +177,7 @@ func (h *Handler) run(c *gin.Context, args runArgs) {
 	if err != nil {
 		h.logger.Error("generation run failed", zap.Uint64("user_id", args.uid),
 			zap.Uint64("chat_id", args.chatID), zap.Uint64("generation_id", args.task.ID),
-			zap.Error(err))
+			zap.String("request_id", c.GetString("request_id")), zap.Error(logx.SafeError(err)))
 		h.sendErr(c, args.uid, args.task.ID)
 		return
 	}
@@ -207,19 +213,6 @@ func lastUser(content string, items []provider.Message) string {
 	return ""
 }
 
-func (h *Handler) open(c *gin.Context) {
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Status(http.StatusOK)
-}
-
-func (h *Handler) send(c *gin.Context, name string, data any) error {
-	c.SSEvent(name, data)
-	c.Writer.Flush()
-	return c.Request.Context().Err()
-}
-
 // logSend 记录 SSE 客户端断开等发送错误。
 func (h *Handler) logSend(uid, taskID uint64, err error) {
 	h.logger.Warn("generation stream send failed", zap.Uint64("user_id", uid),
@@ -228,6 +221,11 @@ func (h *Handler) logSend(uid, taskID uint64, err error) {
 
 // fail 返回稳定错误并记录上下文，不向客户端泄漏内部存储错误。
 func (h *Handler) fail(c *gin.Context, uid, taskID uint64, err error) {
+	if errors.Is(err, chatdomain.ErrNotFound) {
+		h.logger.Warn("generation chat unavailable", zap.Uint64("user_id", uid), zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND", "message": "chat not found"})
+		return
+	}
 	if errors.Is(err, app.ErrBranch) || errors.Is(err, msgdomain.ErrNotFound) {
 		h.logger.Warn("generation branch rejected", zap.Uint64("user_id", uid), zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_BRANCH", "message": "invalid message branch"})
@@ -238,6 +236,7 @@ func (h *Handler) fail(c *gin.Context, uid, taskID uint64, err error) {
 	c.JSON(http.StatusInternalServerError, gin.H{"code": "INTERNAL_ERROR", "message": "internal error"})
 }
 
+// readIDs 校验路由编号和鉴权身份，拒绝空编号及无效用户。
 func readIDs(c *gin.Context) (uint64, uint64, error) {
 	value, ok := c.Get("user_id")
 	uid, valid := value.(uint64)

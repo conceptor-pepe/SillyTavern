@@ -3,24 +3,30 @@ package infra
 
 import (
 	"context"
-	"errors"
-	"time"
 
 	"ai-chat/backend/internal/generation/domain"
 	"ai-chat/backend/internal/model"
+	"ai-chat/backend/internal/port"
+	store "ai-chat/backend/internal/repo"
 	"gorm.io/gorm"
 )
 
 // Repo 是生成任务 Repository 的 GORM 实现。
-type Repo struct{ db *gorm.DB }
+type Repo struct {
+	db    *gorm.DB
+	chats port.ChatGate
+}
 
 // NewRepo 创建生成任务 Repository。
-func NewRepo(db *gorm.DB) *Repo { return &Repo{db: db} }
+func NewRepo(db *gorm.DB, chats port.ChatGate) *Repo { return &Repo{db: db, chats: chats} }
 
 // Create 保存新的生成任务。
 func (r *Repo) Create(ctx context.Context, item domain.Generation) (domain.Generation, error) {
 	row := toRow(item)
-	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
+	err := r.chats.WithChat(ctx, item.UserID, item.ConversationID, func(ctx context.Context) error {
+		return store.DB(ctx, r.db).Create(&row).Error
+	})
+	if err != nil {
 		return domain.Generation{}, err
 	}
 	return toDomain(row), nil
@@ -28,24 +34,42 @@ func (r *Repo) Create(ctx context.Context, item domain.Generation) (domain.Gener
 
 // Find 按用户范围读取生成任务。
 func (r *Repo) Find(ctx context.Context, uid, id uint64) (domain.Generation, error) {
-	var row model.Generation
-	err := r.db.WithContext(ctx).Where("user_id = ? AND id = ?", uid, id).First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.Generation{}, domain.ErrNotFound
+	row, err := r.findRow(ctx, uid, id)
+	if err != nil {
+		return domain.Generation{}, err
 	}
-	return toDomain(row), err
+	err = r.chats.WithChat(ctx, uid, row.ConversationID, func(ctx context.Context) error {
+		var err error
+		row, err = r.findRow(ctx, uid, id)
+		return err
+	})
+	if err != nil {
+		return domain.Generation{}, chatError(err)
+	}
+	return toDomain(row), nil
 }
 
 // Update 按用户范围更新生成状态。
 func (r *Repo) Update(ctx context.Context, uid, id uint64, patch domain.Generation) error {
-	return r.move(ctx, uid, id, nil, patch)
+	return r.Move(ctx, uid, id, nil, patch)
 }
 
 // Move 按用户和前置状态条件更新任务。
 func (r *Repo) Move(ctx context.Context, uid, id uint64, from []string, patch domain.Generation) error {
-	return r.move(ctx, uid, id, from, patch)
+	if patch.Status != domain.StatusRunning && patch.Status != domain.StatusCompleted {
+		return r.move(ctx, uid, id, from, patch)
+	}
+	row, err := r.findRow(ctx, uid, id)
+	if err != nil {
+		return err
+	}
+	err = r.chats.WithChat(ctx, uid, row.ConversationID, func(ctx context.Context) error {
+		return r.move(ctx, uid, id, from, patch)
+	})
+	return chatError(err)
 }
 
+// move 以用户和前置状态约束更新，避免迟到收尾覆盖已有终态。
 func (r *Repo) move(ctx context.Context, uid, id uint64, from []string, patch domain.Generation) error {
 	updates := map[string]any{"status": patch.Status}
 	if patch.MessageID != nil {
@@ -61,7 +85,7 @@ func (r *Repo) move(ctx context.Context, uid, id uint64, from []string, patch do
 		updates["error_code"] = patch.ErrorCode
 		updates["error_message"] = patch.ErrorMessage
 	}
-	query := r.db.WithContext(ctx).Model(&model.Generation{}).Where("user_id = ? AND id = ?", uid, id)
+	query := store.DB(ctx, r.db).Model(&model.Generation{}).Where("user_id = ? AND id = ?", uid, id)
 	if len(from) > 0 {
 		query = query.Where("status IN ?", from)
 	}
@@ -75,17 +99,7 @@ func (r *Repo) move(ctx context.Context, uid, id uint64, from []string, patch do
 	return nil
 }
 
-// Expire 将超时运行任务统一标记为失败。
-func (r *Repo) Expire(ctx context.Context, before int64) (int64, error) {
-	result := r.db.WithContext(ctx).Model(&model.Generation{}).
-		Where("status = ? AND started_at IS NOT NULL AND started_at < ?", domain.StatusRunning, before).
-		Updates(map[string]any{
-			"status": domain.StatusFailed, "error_code": "generation_timeout",
-			"error_message": "generation timed out", "finished_at": time.Now().Unix(),
-		})
-	return result.RowsAffected, result.Error
-}
-
+// toRow 将领域任务映射到存储字段，不接受调用方指定数据库主键。
 func toRow(item domain.Generation) model.Generation {
 	return model.Generation{
 		UserID: item.UserID, ConversationID: item.ConversationID, MessageID: item.MessageID,
@@ -95,6 +109,7 @@ func toRow(item domain.Generation) model.Generation {
 	}
 }
 
+// toDomain 返回任务事实，保留来源归属和可空生命周期时间。
 func toDomain(row model.Generation) domain.Generation {
 	return domain.Generation{
 		ID: row.ID, UserID: row.UserID, ConversationID: row.ConversationID, MessageID: row.MessageID,

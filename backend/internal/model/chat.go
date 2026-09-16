@@ -15,7 +15,7 @@ type Conversation struct {
 // Favorite 保存用户对角色或会话的收藏关系。
 type Favorite struct {
 	Base
-	UserID      uint64 `gorm:"not null;index"`
-	CharacterID uint64 `gorm:"not null;uniqueIndex:uk_user_char_kind"`
-	Kind        string `gorm:"size:32;not null;uniqueIndex:uk_user_char_kind"`
+	UserID      uint64 `gorm:"not null;index;uniqueIndex:uk_favorites_user_char_kind,priority:1"`
+	CharacterID uint64 `gorm:"not null;uniqueIndex:uk_favorites_user_char_kind,priority:2"`
+	Kind        string `gorm:"size:32;not null;uniqueIndex:uk_favorites_user_char_kind,priority:3"`
 }

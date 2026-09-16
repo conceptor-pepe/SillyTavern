@@ -14,9 +14,10 @@ import (
 
 // LoginHandler 保存登录接口所需的用例和会话配置。
 type LoginHandler struct {
-	repo   domain.Repo
-	secret string
-	logger *zap.Logger
+	repo      domain.Repo
+	secret    string
+	logger    *zap.Logger
+	localHTTP bool
 }
 
 // NewLogin 创建登录 Handler。
@@ -51,7 +52,7 @@ func (h *LoginHandler) register(c *gin.Context) {
 		return
 	}
 	token := auth.Sign(h.secret, out.ID, out.Version, time.Now())
-	c.SetCookie("ai_chat_token", token, 86400, "/", "", true, true)
+	h.setCookie(c, token, 86400)
 	h.logger.Info("register succeeded", zap.Uint64("user_id", out.ID))
 	c.JSON(http.StatusCreated, gin.H{"user": out})
 }
@@ -71,14 +72,14 @@ func (h *LoginHandler) login(c *gin.Context) {
 		return
 	}
 	token := auth.Sign(h.secret, out.ID, out.Version, time.Now())
-	c.SetCookie("ai_chat_token", token, 86400, "/", "", true, true)
+	h.setCookie(c, token, 86400)
 	h.logger.Info("login succeeded", zap.Uint64("user_id", out.ID))
 	c.JSON(http.StatusOK, gin.H{"user": out})
 }
 
 // logout 清理当前登录 Cookie。
 func (h *LoginHandler) logout(c *gin.Context) {
-	c.SetCookie("ai_chat_token", "", -1, "/", "", true, true)
+	h.setCookie(c, "", -1)
 	h.logger.Info("logout succeeded")
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

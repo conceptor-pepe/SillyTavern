@@ -1,0 +1,32 @@
+# 与原部署共用项目及命名卷，仅发布本机数据库端口，业务不在容器运行。
+name: ai-chat-local
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ai_chat
+      MYSQL_USER: ai_chat
+      MYSQL_PASSWORD: ${CHAT_DB_PASSWORD:?initialize local deployment first}
+      MYSQL_ROOT_PASSWORD: ${CHAT_ROOT_PASSWORD:?initialize local deployment first}
+    ports: ["127.0.0.1:13307:3306"]
+    volumes: ["mysql:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql -h127.0.0.1 -uai_chat -e 'SELECT 1' ai_chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["127.0.0.1:16380:6379"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  mysql:
+  redis:

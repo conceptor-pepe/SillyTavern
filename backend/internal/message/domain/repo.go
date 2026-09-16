@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 // ErrNotFound 隐藏不存在、已删除和其他用户消息之间的差异。
@@ -15,6 +16,7 @@ var ErrConflict = errors.New("message state conflict")
 
 // Message 表示会话中的正式消息及其分支位置。
 type Message struct {
+	CreatedAt       time.Time       `json:"created_at"`
 	ID              uint64          `json:"id,string"`
 	ConversationID  uint64          `json:"conversation_id,string"`
 	ParentID        *uint64         `json:"parent_id,string"`

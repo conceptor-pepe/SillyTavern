@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"ai-chat/backend/internal/generation/domain"
 	msgdomain "ai-chat/backend/internal/message/domain"
 	provider "ai-chat/backend/internal/provider/domain"
 )
@@ -27,6 +28,7 @@ type Runner struct {
 	messages MessageWriter
 	mu       sync.Mutex
 	stops    map[uint64]context.CancelFunc
+	limit    time.Duration
 }
 
 // MessageWriter 保存生成完成后的 AI 消息。
@@ -41,7 +43,8 @@ type DoneWriter interface {
 
 // NewRunner 创建生成编排器。
 func NewRunner(tasks *Service, p provider.Provider, messages MessageWriter) *Runner {
-	return &Runner{tasks: tasks, provider: p, messages: messages, stops: make(map[uint64]context.CancelFunc)}
+	return &Runner{tasks: tasks, provider: p, messages: messages,
+		stops: make(map[uint64]context.CancelFunc), limit: domain.RunLimit}
 }
 
 // Run 执行流式生成，返回完整的 AI 消息。
@@ -71,21 +74,40 @@ func (r *Runner) RunStream(ctx context.Context, args RunArgs, send func(string) 
 
 // RunEvents 按候选索引推送增量，并在完整读取后统一落库。
 func (r *Runner) RunEvents(ctx context.Context, args RunArgs, send func(provider.Event) error) (msgdomain.Message, error) {
-	runCtx, stop := context.WithCancel(ctx)
-	r.addStop(args.GenerationID, stop)
-	defer r.delStop(args.GenerationID)
+	timedCtx, stop := context.WithTimeout(ctx, r.limit)
 	defer stop()
+	runCtx, cancel := context.WithCancelCause(timedCtx)
+	defer cancel(nil)
+	r.addStop(args.GenerationID, func() { cancel(context.Canceled) })
+	defer r.delStop(args.GenerationID)
 	if err := r.tasks.Start(runCtx, args.UserID, args.GenerationID, time.Now().Unix()); err != nil {
+		return r.fail(runCtx, args, err)
+	}
+	stopWatch := r.watchTask(runCtx, args, cancel)
+	defer stopWatch()
+	msg, err := r.readReply(runCtx, args, send)
+	// 上游已关闭，先退出监听再完成事务，避免将自身刚提交的 completed 误当外部取消。
+	stopWatch()
+	if err != nil {
+		return r.fail(runCtx, args, err)
+	}
+	item, err := r.saveResult(runCtx, args, msg)
+	if err != nil {
+		return r.fail(runCtx, args, err)
+	}
+	return item, nil
+}
+
+// readReply 读取并关闭上游后组装候选；完整结果由调用方统一提交。
+func (r *Runner) readReply(ctx context.Context, args RunArgs, send func(provider.Event) error) (msgdomain.Message, error) {
+	stream, err := r.provider.Stream(ctx, args.Request)
+	if err != nil {
 		return msgdomain.Message{}, err
 	}
-	stream, err := r.provider.Stream(runCtx, args.Request)
-	if err != nil {
-		return r.fail(ctx, args, err)
-	}
-	variants, readErr := readCandidates(runCtx, stream, args.Request.N, send)
+	variants, readErr := readCandidates(ctx, stream, args.Request.N, send)
 	err = errors.Join(readErr, stream.Close())
 	if err != nil {
-		return r.fail(ctx, args, err)
+		return msgdomain.Message{}, err
 	}
 	msg := msgdomain.Message{
 		ConversationID: args.ConversationID, ParentID: args.ParentID,
@@ -94,11 +116,7 @@ func (r *Runner) RunEvents(ctx context.Context, args RunArgs, send func(provider
 	if len(variants) > 1 {
 		msg.Variants = variants
 	}
-	item, err := r.saveResult(runCtx, args, msg)
-	if err != nil {
-		return r.fail(ctx, args, err)
-	}
-	return item, nil
+	return msg, nil
 }
 
 // saveResult 要求多候选使用事务写入器，禁止先完成任务再追加候选。
@@ -133,11 +151,16 @@ func (r *Runner) delStop(id uint64) {
 
 // fail 使用独立短超时保存失败状态，客户端断开不应阻止任务收尾。
 func (r *Runner) fail(ctx context.Context, args RunArgs, cause error) (msgdomain.Message, error) {
+	// 关闭响应体可能仅返回网络读取错误，必须保留实际运行上下文的超时原因。
+	cause = errors.Join(cause, ctx.Err(), context.Cause(ctx))
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	failArgs := FailArgs{
 		UserID: args.UserID, ID: args.GenerationID, Code: "generation_failed",
-		Message: cause.Error(), Finished: time.Now().Unix(),
+		Message: "generation failed", Finished: time.Now().Unix(),
+	}
+	if errors.Is(cause, context.DeadlineExceeded) {
+		failArgs.Code, failArgs.Message = "generation_timeout", "generation timed out"
 	}
 	if err := r.tasks.Fail(ctx, failArgs); err != nil {
 		return msgdomain.Message{}, errors.Join(cause, err)

@@ -120,6 +120,8 @@
         "init": "node src/server-init.js",
         "start": "node server.js",
         "start:local": "node scripts/start-local.mjs",
+        "start:frontend": "node scripts/serve-frontend.mjs",
+        "test:go-frontend": "node --test scripts/api-client.test.mjs scripts/go-chat.test.mjs scripts/frontend-server.test.mjs",
         "test:chat-path": "node scripts/test-chat-path.mjs",
         "debug": "node --inspect server.js",
         "start:global": "node server.js --global",

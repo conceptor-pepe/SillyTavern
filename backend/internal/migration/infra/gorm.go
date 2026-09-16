@@ -96,7 +96,7 @@ func (w *GormWriter) ImportCharacter(ctx context.Context, userID uint64, item le
 	var found model.Character
 	err := w.db.WithContext(ctx).Where("user_id = ? AND name = ?", userID, item.Name).First(&found).Error
 	if err == nil {
-		return false, nil
+		return false, w.fillCharacter(ctx, found, item)
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
@@ -113,12 +113,65 @@ func (w *GormWriter) ImportCharacter(ctx context.Context, userID uint64, item le
 		UserID: userID, Name: item.Name, Description: item.Description,
 		Personality: item.Personality, Scenario: item.Scenario,
 		FirstMessage: item.FirstMessage, MessageSample: item.MessageSample,
-		Creator: item.Creator, Tags: string(tags), ExtraData: extra,
+		Creator: item.Creator, CreatorNotes: item.CreatorNotes,
+		Tags: string(tags), ExtraData: extra,
 	}
 	if err := w.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// fillCharacter 仅补齐迁移角色的空字段，避免覆盖用户后续编辑。
+func (w *GormWriter) fillCharacter(ctx context.Context, row model.Character, item legacy.Character) error {
+	if !fromMigration(row.ExtraData) {
+		return nil
+	}
+	fields, err := missingFields(row, item)
+	if err != nil {
+		// audit:allow-no-log 由迁移命令统一记录角色卡和目标用户。
+		return err
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return w.db.WithContext(ctx).Model(&model.Character{}).Where("id = ?", row.ID).Updates(fields).Error
+}
+
+// missingFields 收集可安全补填的空角色字段。
+func missingFields(row model.Character, item legacy.Character) (map[string]any, error) {
+	fields := make(map[string]any)
+	addText(fields, "description", row.Description, item.Description)
+	addText(fields, "personality", row.Personality, item.Personality)
+	addText(fields, "scenario", row.Scenario, item.Scenario)
+	addText(fields, "first_message", row.FirstMessage, item.FirstMessage)
+	addText(fields, "message_sample", row.MessageSample, item.MessageSample)
+	addText(fields, "creator", row.Creator, item.Creator)
+	addText(fields, "creator_notes", row.CreatorNotes, item.CreatorNotes)
+	if row.Tags == "[]" && len(item.Tags) > 0 {
+		tags, err := json.Marshal(item.Tags)
+		if err != nil {
+			// audit:allow-no-log 由迁移命令统一记录角色卡和目标用户。
+			return nil, err
+		}
+		fields["tags"] = string(tags)
+	}
+	return fields, nil
+}
+
+// addText 仅在目标为空且来源非空时登记更新。
+func addText(fields map[string]any, key, current, source string) {
+	if current == "" && source != "" {
+		fields[key] = source
+	}
+}
+
+// fromMigration 通过结构化来源字段识别迁移创建的角色。
+func fromMigration(value string) bool {
+	var data struct {
+		SourcePath string `json:"source_path"`
+	}
+	return json.Unmarshal([]byte(value), &data) == nil && data.SourcePath != ""
 }
 
 // cardExtra 组合角色卡来源和扩展数据，供迁移写入角色表。

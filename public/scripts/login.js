@@ -1,4 +1,5 @@
 import { initAccessibility } from './a11y.js';
+import { apiClient } from './api-client.js';
 
 /**
  * CRSF token for requests.
@@ -106,35 +107,13 @@ async function sendRecoveryPart2(handle, code, newPassword) {
  * @returns {Promise<void>}
  */
 async function performLogin(handle, password) {
-    const userInfo = {
-        handle: handle,
-        password: password,
-    };
-
     try {
-        const response = await fetch('/api/users/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken,
-            },
-            body: JSON.stringify(userInfo),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            return displayError(errorData.error || 'An error occurred');
-        }
-
-        const data = await response.json();
-
-        if (data.handle) {
-            console.log(`Successfully logged in as ${handle}!`);
-            redirectToHome();
-        }
+        await apiClient.login({ handle, password });
+        console.log(`Successfully logged in as ${handle}!`);
+        redirectToHome();
     } catch (error) {
         console.error('Error logging in:', error);
-        displayError(String(error));
+        displayError(error.message || 'An error occurred');
     }
 }
 

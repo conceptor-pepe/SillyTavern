@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	charhttp "ai-chat/backend/internal/character/http"
 	charinfra "ai-chat/backend/internal/character/infra"
+	chatapp "ai-chat/backend/internal/chat/app"
 	chathttp "ai-chat/backend/internal/chat/http"
 	chatinfra "ai-chat/backend/internal/chat/infra"
 	"ai-chat/backend/internal/config"
@@ -22,6 +24,7 @@ import (
 	providerinfra "ai-chat/backend/internal/provider/infra"
 	userhttp "ai-chat/backend/internal/user/http"
 	userinfra "ai-chat/backend/internal/user/infra"
+	"ai-chat/backend/internal/webui"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -36,70 +39,93 @@ type Server struct {
 	http      *http.Server
 	sql       *gorm.DB
 	redis     *redis.Client
-	stopClean context.CancelFunc
+	cleaner   *taskCleaner
+	drain     *requestDrain
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New 创建只包含基础能力的 API 服务。
 func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 	engine := gin.New()
-	engine.Use(gin.Recovery(), requestID())
+	engine.Use(recoverRequest(logger), requestID())
 	registerHealth(engine)
+	engine.NoRoute(gin.WrapH(webui.Handler()))
+	drain := newDrain()
 	server := &Server{
+		drain: drain,
 		http: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           engine,
+			Handler:           drain.wrap(engine),
 			ReadHeaderTimeout: 5 * time.Second,
+			ErrorLog:          zap.NewStdLog(logger),
 		},
 	}
+	if err := server.connect(cfg, engine, logger); err != nil {
+		drain.stop()
+		return nil, errors.Join(err, server.closeClients())
+	}
+	return server, nil
+}
+
+// connect 装配存储和业务路由；任务补偿不依赖当前是否启用模型供应商。
+func (s *Server) connect(cfg config.Config, engine *gin.Engine, logger *zap.Logger) error {
 	if cfg.RedisAddr != "" {
 		client, err := db.OpenRedis(context.Background(), cfg.RedisAddr, cfg.RedisPass, cfg.RedisDB)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		server.redis = client
+		s.redis = client
 		logger.Info("redis ready", zap.String("addr", cfg.RedisAddr))
 	}
 	if cfg.MySQLDSN != "" {
-		conn, err := openDB(cfg)
+		conn, err := openDB(cfg, logger)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		server.sql = conn
+		s.sql = conn
 		registerModules(engine, conn, cfg, logger)
+		gate := chatinfra.NewGate(conn)
+		tasks := genapp.New(geninfra.NewRepo(conn, gate))
 		if cfg.ProviderURL != "" {
-			tasks := genapp.New(geninfra.NewRepo(conn))
 			provider := &providerinfra.OpenAI{URL: cfg.ProviderURL, Key: cfg.ProviderKey}
-			runner := genapp.NewRunner(tasks, provider, geninfra.NewDoneWriter(conn))
+			runner := genapp.NewRunner(tasks, provider, geninfra.NewDoneWriter(conn, gate))
 			genhttp.New(tasks, runner, genhttp.Deps{
-				Chats: chatinfra.NewRepo(conn), Chars: charinfra.NewRepo(conn), Msgs: msginfra.NewRepo(conn),
+				DefaultModel: cfg.ProviderModel,
+				Chats:        chatinfra.NewRepo(conn), Chars: charinfra.NewRepo(conn), Msgs: msginfra.NewRepo(conn),
 			}, logger).Routes(engine, RequireAuth(cfg.AuthSecret))
-			cleanCtx, stop := context.WithCancel(context.Background())
-			server.stopClean = stop
-			go cleanTasks(cleanCtx, tasks, logger)
 			logger.Info("provider ready", zap.String("model", cfg.ProviderModel),
 				zap.String("provider", "openai"))
 		} else {
 			logger.Info("provider disabled", zap.String("reason", "AI_CHAT_PROVIDER_URL is empty"),
 				zap.String("status", gendomain.StatusPending))
 		}
+		s.cleaner = startCleaner(tasks, logger, time.Minute)
 		logger.Info("mysql ready")
 	}
-	return server, nil
+	return nil
 }
 
 // registerModules 注册数据库相关的业务路由。
 func registerModules(engine *gin.Engine, conn *gorm.DB, cfg config.Config, logger *zap.Logger) {
 	auth := RequireAuth(cfg.AuthSecret)
-	userhttp.NewLogin(userinfra.NewRepo(conn), cfg.AuthSecret, logger).RegisterRoutes(engine, auth)
+	login := userhttp.NewLogin(userinfra.NewRepo(conn), cfg.AuthSecret, logger)
+	if cfg.LocalHTTP() {
+		login.UseLocalHTTP()
+	}
+	login.RegisterRoutes(engine, auth)
 	charhttp.New(charinfra.NewRepo(conn), logger).Routes(engine, auth)
 	chats := chatinfra.NewRepo(conn)
-	chathttp.New(chats, charinfra.NewRepo(conn), logger, chats).Routes(engine, auth)
+	gate := chatinfra.NewGate(conn)
+	tasks := genapp.New(geninfra.NewRepo(conn, gate))
+	remove := chatapp.NewRemover(chats, gate, tasks)
+	chathttp.New(chats, charinfra.NewRepo(conn), remove, logger, chats).Routes(engine, auth)
 	msghttp.New(msginfra.NewRepo(conn), chatinfra.NewRepo(conn), logger).Routes(engine, auth)
 }
 
 // openDB 创建 MySQL 连接并执行结构迁移。
-func openDB(cfg config.Config) (*gorm.DB, error) {
-	conn, err := db.OpenMySQL(context.Background(), cfg.MySQLDSN)
+func openDB(cfg config.Config, logger *zap.Logger) (*gorm.DB, error) {
+	conn, err := db.OpenMySQL(context.Background(), cfg.MySQLDSN, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -124,49 +150,49 @@ func (s *Server) Run(addr string) error {
 	return s.http.ListenAndServe()
 }
 
-// Stop 在超时时间内关闭 HTTP 服务。
-func (s *Server) Stop(ctx context.Context) error {
-	if s.stopClean != nil {
-		s.stopClean()
-	}
-	err := s.http.Shutdown(ctx)
-	if s.sql != nil {
-		sqlDB, closeErr := s.sql.DB()
-		if closeErr != nil {
-			return closeErr
-		}
-		if closeErr := sqlDB.Close(); closeErr != nil {
-			return closeErr
-		}
-	}
-	if s.redis != nil {
-		if closeErr := s.redis.Close(); closeErr != nil {
-			return closeErr
-		}
-	}
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
+// RunTLS 由业务进程直接终止 TLS，无需额外反向代理进程。
+func (s *Server) RunTLS(addr, cert, key string) error {
+	s.http.Addr = addr
+	return s.http.ListenAndServeTLS(cert, key)
 }
 
-// cleanTasks 周期清理超过十分钟仍运行的生成任务。
-func cleanTasks(ctx context.Context, tasks *genapp.Service, logger *zap.Logger) {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			count, err := tasks.Expire(ctx, time.Now().Add(-10*time.Minute).Unix())
-			if err != nil {
-				logger.Warn("generation cleanup failed", zap.Error(err))
-				continue
-			}
-			if count > 0 {
-				logger.Info("generation cleanup done", zap.Int64("count", count))
-			}
-		case <-ctx.Done():
-			return
-		}
+// Stop 等待 HTTP 与清理协程退出；超时保留存储连接，允许调用方再次收尾。
+func (s *Server) Stop(ctx context.Context) error {
+	if s.drain != nil {
+		s.drain.stop()
 	}
+	var cleanErr error
+	if s.cleaner != nil {
+		cleanErr = s.cleaner.stop(ctx)
+	}
+	err := s.http.Shutdown(ctx)
+	var drainErr error
+	if s.drain != nil {
+		drainErr = s.drain.wait(ctx)
+	}
+	if errors.Is(err, http.ErrServerClosed) {
+		err = nil
+	}
+	if err != nil || cleanErr != nil || drainErr != nil {
+		return errors.Join(err, cleanErr, drainErr)
+	}
+	return s.closeClients()
+}
+
+// closeClients 汇总连接释放错误，前一项失败时仍尝试关闭其他依赖。
+func (s *Server) closeClients() error {
+	s.closeOnce.Do(func() { s.closeErr = s.releaseClients() })
+	return s.closeErr
+}
+
+// releaseClients 仅在初始化失败或所有请求退出后释放外部连接。
+func (s *Server) releaseClients() error {
+	var err error
+	if s.sql != nil {
+		err = closeDB(s.sql, nil)
+	}
+	if s.redis != nil {
+		err = errors.Join(err, s.redis.Close())
+	}
+	return err
 }

@@ -3,7 +3,7 @@ package logx
 
 import "go.uber.org/zap"
 
-// New 创建开发环境使用的 Zap 日志实例。
+// New 创建 JSON 格式的 Zap 日志实例，供 API 和迁移命令共用。
 func New() (*zap.Logger, error) {
-	return zap.NewDevelopment()
+	return zap.NewProduction()
 }

@@ -50,7 +50,7 @@ func TestCandidateStream(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/chats/3/generations",
 		strings.NewReader(`{"model":"demo","n":2}`))
 	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
+	rec := newFrameRecorder()
 	engine.ServeHTTP(rec, req)
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || p.count != 2 || len(writer.item.Variants) != 2 {

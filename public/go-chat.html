@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI 陪伴 · 聊天</title>
+    <link rel="icon" href="/img/ai4.png">
+    <link rel="stylesheet" href="/css/fontawesome.min.css">
+    <link rel="stylesheet" href="/css/solid.min.css">
+    <link rel="stylesheet" href="/css/go-chat.css">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="/"><span>AI</span> 陪伴</a>
+        <div class="account" hidden><span id="user-name"></span><button id="logout" class="icon" title="退出登录" aria-label="退出登录"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></button></div>
+    </header>
+    <div id="notice" role="alert" hidden></div>
+    <main id="auth" class="auth" hidden>
+        <img src="/img/ai4.png" width="64" height="64" alt="">
+        <h1>欢迎回来</h1>
+        <form id="auth-form">
+            <label>账号<input name="handle" autocomplete="username" required maxlength="100"></label>
+            <label id="name-field" hidden>昵称<input name="name" autocomplete="nickname" maxlength="100"></label>
+            <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+            <button class="primary" id="auth-submit" type="submit">登录</button>
+        </form>
+        <button id="auth-mode" class="quiet">创建账号</button>
+    </main>
+    <div id="workspace" hidden>
+        <aside class="sidebar">
+          <nav class="primary-nav" aria-label="主导航">
+            <button id="library" class="nav-button" aria-current="page"><i class="fa-solid fa-house" aria-hidden="true"></i> 首页</button>
+            <button id="recent-chats" class="nav-button"><i class="fa-solid fa-comment" aria-hidden="true"></i> 最近聊天</button>
+            <button id="create-character" class="nav-button"><i class="fa-solid fa-square-plus" aria-hidden="true"></i> 创建角色</button>
+            <button id="favorites-nav" class="nav-button"><i class="fa-solid fa-heart" aria-hidden="true"></i> 我的收藏</button>
+          </nav>
+          <div class="conversation-nav">
+            <div class="side-heading"><h2>最近聊天</h2><button id="refresh-chats" class="icon" title="刷新会话" aria-label="刷新会话"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i></button></div>
+            <nav id="chat-list" aria-label="会话列表"></nav>
+          </div>
+        </aside>
+        <main id="library-view" class="library-view">
+            <label class="search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input id="search" type="search" aria-label="搜索角色" placeholder="搜索角色、故事、标签"></label>
+            <div class="catalog-heading"><h1>发现角色</h1><span id="character-count"></span></div>
+            <div class="catalog-tabs"><button class="active" id="all-characters">角色</button><button id="saved-characters">收藏</button></div>
+            <div class="filters">
+                <select id="character-sort" aria-label="角色排序"><option value="new">最近添加</option><option value="name">名称排序</option></select>
+                <select id="character-gender" aria-label="角色性别"><option value="">全部性别</option><option value="female">女性</option><option value="male">男性</option><option value="other">非二元</option></select>
+                <label><input id="only-favorites" type="checkbox"> 只看收藏</label>
+            </div>
+            <nav id="tag-filters" class="tag-filters" aria-label="角色标签"></nav>
+            <div id="character-list" class="character-list"></div>
+        </main>
+        <main id="chat-view" class="chat-view" hidden>
+          <div class="chat-column">
+            <header class="chat-header">
+                <button id="back" class="icon" title="返回角色" aria-label="返回角色"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button>
+                <img id="chat-avatar" src="/img/ai4.png" width="40" height="40" alt="">
+                <div class="chat-heading"><h1 id="chat-title"></h1><span id="chat-state" role="status">已连接</span></div>
+                <button id="new-chat" class="icon" title="新建会话" aria-label="新建会话"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+                <button id="delete-chat" class="icon danger" title="删除会话" aria-label="删除会话"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+                <button id="chat-info" class="icon" title="角色资料" aria-label="角色资料"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+                <button id="chat-background" class="icon" title="人物背景" aria-label="人物背景" aria-pressed="true"><i class="fa-solid fa-image" aria-hidden="true"></i></button>
+            </header>
+            <details class="chat-settings"><summary><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> 对话历史</summary>
+                <label class="branch-field">从这里继续<select id="branch" aria-label="当前消息分支"></select></label>
+            </details>
+            <section id="messages" class="messages" aria-label="聊天消息"></section>
+            <form id="composer" class="composer">
+                <label for="message" class="sr-only">消息</label>
+                <div class="compose-row"><textarea id="message" rows="2" placeholder="想聊些什么？" required></textarea>
+                  <div class="compose-tools">
+                    <button id="compose-role" class="icon" type="button" title="角色资料" aria-label="查看角色资料"><i class="fa-solid fa-address-card" aria-hidden="true"></i></button>
+                    <button id="compose-history" class="icon" type="button" title="对话历史" aria-label="展开对话历史"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></button>
+                    <span class="compose-spacer"></span>
+                    <button id="send" class="icon primary" type="submit" title="发送" aria-label="发送"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i></button>
+                    <button id="stop" class="icon danger" type="button" title="停止生成" aria-label="停止生成" hidden><i class="fa-solid fa-stop" aria-hidden="true"></i></button>
+                  </div>
+                </div>
+            </form>
+          </div>
+          <aside class="role-panel" aria-label="当前角色"><img id="role-portrait" src="/img/ai4.png" alt=""><div class="role-copy"><h2 id="role-name"></h2><span class="private-label"><i class="fa-solid fa-lock" aria-hidden="true"></i> 我的角色</span><div id="role-tags" class="tags"></div><h3>角色简介</h3><p id="role-description"></p><button id="role-detail" class="nav-button"><i class="fa-solid fa-address-card" aria-hidden="true"></i> 角色详情</button></div></aside>
+        </main>
+        <main id="create-view" class="create-view" hidden>
+            <header class="create-heading"><button id="create-back" class="icon" title="返回首页" aria-label="返回首页"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button><h1>创建角色</h1><span class="private-label"><i class="fa-solid fa-lock" aria-hidden="true"></i> 仅自己可见</span></header>
+            <div class="create-layout">
+              <form id="create-character-form">
+                <section class="form-section"><h2>角色档案</h2>
+                  <label class="upload-field"><img id="upload-preview" src="/img/ai4.png" alt="角色封面预览"><span><strong>角色封面</strong><span class="upload-caption">JPG / PNG / WebP · 最大 5 MB</span><input id="portrait-file" type="file" accept="image/jpeg,image/png,image/webp"></span></label>
+                  <label>名称 <span class="required">*</span><input name="name" required maxlength="128" placeholder="角色的名字"></label>
+                  <div class="field-row"><label>性别<select name="gender"><option value="">未设置</option><option value="female">女性</option><option value="male">男性</option><option value="other">非二元</option></select></label><label>年龄<input name="age" maxlength="8" placeholder="角色的年龄"></label></div>
+                  <label>简介<textarea name="description" rows="3" maxlength="10000" placeholder="一句话介绍你的角色"></textarea></label>
+                </section>
+                <section class="form-section"><h2>角色设定</h2>
+                  <label>开场白<textarea name="first_message" rows="5" maxlength="10000" placeholder="你们相遇时，角色说的第一句话"></textarea></label>
+                  <label>性格与背景<textarea name="personality" rows="5" maxlength="10000" placeholder="性格、经历、说话方式与喜好"></textarea></label>
+                  <label>相遇场景<textarea name="scenario" rows="3" maxlength="10000" placeholder="故事发生的地点与背景"></textarea></label>
+                  <details><summary>示例对话</summary><label><span class="sr-only">示例对话</span><textarea name="message_sample" rows="4" maxlength="10000" placeholder="你：你好。&#10;角色：很高兴见到你。"></textarea></label></details>
+                </section>
+                <section class="form-section"><h2>角色标签</h2><label>标签（逗号分隔，最多 9 个）<input name="tags" maxlength="224" placeholder="例如：日常、幻想、冒险"></label></section>
+                <footer class="create-footer"><button type="button" id="create-cancel">取消</button><button class="primary" id="create-submit" type="submit"><i class="fa-solid fa-comment" aria-hidden="true"></i> 创建并聊天</button></footer>
+              </form>
+              <aside class="create-preview"><header><h2>预览</h2><div class="preview-tabs"><button type="button" data-preview="card" aria-pressed="true">角色卡</button><button type="button" data-preview="chat" aria-pressed="false">聊天</button></div></header><article id="preview-card" class="preview-card"><img id="preview-image" src="/img/ai4.png" alt=""><div><h2 id="preview-name">角色名称</h2><p id="preview-description">角色简介</p><div id="preview-tags" class="tags"></div><span class="private-label">仅自己可见</span></div></article><div id="preview-chat" class="preview-chat" hidden><img id="preview-chat-image" src="/img/ai4.png" alt=""><h2 id="preview-chat-name">角色名称</h2><p id="preview-greeting">开场白</p></div></aside>
+            </div>
+        </main>
+    </div>
+    <dialog id="character-dialog">
+        <header><h2 id="detail-name"></h2><button class="icon" data-close title="关闭" aria-label="关闭"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
+        <img class="detail-avatar" src="/img/ai4.png" width="80" height="80" alt="">
+        <div id="detail-body" tabindex="0" role="region" aria-label="角色简介与设定"></div>
+        <footer><button id="favorite" class="icon" title="收藏角色" aria-label="收藏角色" aria-pressed="false"><i class="fa-solid fa-heart" aria-hidden="true"></i></button><button id="start-chat" class="primary">开始聊天</button></footer>
+    </dialog>
+    <dialog id="edit-dialog">
+        <form id="edit-form"><h2>编辑消息</h2><label>内容<textarea id="edit-content" rows="6" required></textarea></label><footer><button type="button" data-close>取消</button><button class="primary" type="submit">保存</button></footer></form>
+    </dialog>
+    <dialog id="confirm-dialog">
+        <form method="dialog"><h2 id="confirm-title"></h2><p>此操作不可撤销。</p><footer><button value="cancel">取消</button><button value="confirm" class="danger">删除</button></footer></form>
+    </dialog>
+    <script src="/scripts/go-chat/vendor/showdown.min.js"></script>
+    <script src="/scripts/go-chat/vendor/purify.min.js"></script>
+    <script type="module" src="/scripts/go-chat/main.js"></script>
+</body>
+</html>

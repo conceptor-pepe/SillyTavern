@@ -10,6 +10,7 @@ type Character struct {
 	FirstMessage  string
 	MessageSample string
 	Creator       string
+	CreatorNotes  string
 	Tags          []string
 	ExtraData     []byte
 	Avatar        string

@@ -32,6 +32,9 @@ func (r *taskRepo) Move(_ context.Context, _ uint64, _ uint64, _ []string, patch
 }
 func (r *taskRepo) Expire(context.Context, int64) (int64, error) { return 0, nil }
 
+// CancelChat 满足批量取消能力，Runner 单元测试不代替删除事务集成测试。
+func (r *taskRepo) CancelChat(context.Context, uint64, uint64, int64) error { return nil }
+
 type fakeStream struct {
 	events []provider.Event
 	index  int
