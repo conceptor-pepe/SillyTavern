@@ -54,14 +54,21 @@ func (p *OpenAI) Stream(ctx context.Context, req provider.Request) (provider.Str
 }
 
 type stream struct {
-	body io.ReadCloser
-	scan *bufio.Scanner
-	stop chan struct{}
-	once sync.Once
+	body    io.ReadCloser
+	scan    *bufio.Scanner
+	stop    chan struct{}
+	once    sync.Once
+	pending []provider.Event
 }
 
 // Next 读取一条 SSE data 事件并转换为统一事件。
 func (s *stream) Next(ctx context.Context) (provider.Event, error) {
+	if err := ctx.Err(); err != nil {
+		return provider.Event{}, err
+	}
+	if len(s.pending) > 0 {
+		return s.popEvent(), nil
+	}
 	for s.scan.Scan() {
 		select {
 		case <-ctx.Done():
@@ -76,12 +83,24 @@ func (s *stream) Next(ctx context.Context) (provider.Event, error) {
 		if value == "[DONE]" {
 			return provider.Event{Type: "done"}, nil
 		}
-		return parseEvent(value)
+		events, err := parseEvents(value)
+		if err != nil {
+			return provider.Event{}, err
+		}
+		s.pending = events
+		return s.popEvent(), nil
 	}
 	if err := s.scan.Err(); err != nil {
 		return provider.Event{}, err
 	}
 	return provider.Event{Type: "done"}, io.EOF
+}
+
+// popEvent 先返回同一数据帧内的剩余候选，避免读取下一帧时丢失内容。
+func (s *stream) popEvent() provider.Event {
+	event := s.pending[0]
+	s.pending = s.pending[1:]
+	return event
 }
 
 // Close 释放 Provider 的响应连接。
@@ -100,8 +119,8 @@ func closeOnCancel(ctx context.Context, body io.ReadCloser, stop <-chan struct{}
 	}
 }
 
-// parseEvent 提取 OpenAI 增量文本，不暴露供应商原始响应。
-func parseEvent(value string) (provider.Event, error) {
+// parseEvents 保留数据帧中的全部候选及顺序，不暴露供应商原始响应。
+func parseEvents(value string) ([]provider.Event, error) {
 	var data struct {
 		Choices []struct {
 			Index int `json:"index"`
@@ -111,11 +130,14 @@ func parseEvent(value string) (provider.Event, error) {
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal([]byte(value), &data); err != nil {
-		return provider.Event{}, err
+		return nil, err
 	}
 	if len(data.Choices) == 0 {
-		return provider.Event{Type: "delta"}, nil
+		return []provider.Event{{Type: "delta"}}, nil
 	}
-	choice := data.Choices[0]
-	return provider.Event{Type: "delta", Index: choice.Index, Text: choice.Delta.Content}, nil
+	events := make([]provider.Event, 0, len(data.Choices))
+	for _, choice := range data.Choices {
+		events = append(events, provider.Event{Type: "delta", Index: choice.Index, Text: choice.Delta.Content})
+	}
+	return events, nil
 }

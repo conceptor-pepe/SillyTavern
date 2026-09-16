@@ -101,11 +101,11 @@ func TestCancel(t *testing.T) {
 
 // TestParseIndex 验证 Provider 保留候选索引。
 func TestParseIndex(t *testing.T) {
-	event, err := parseEvent(`{"choices":[{"index":2,"delta":{"content":"hello"}}]}`)
+	events, err := parseEvents(`{"choices":[{"index":2,"delta":{"content":"hello"}}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if event.Index != 2 || event.Text != "hello" {
-		t.Fatalf("unexpected event: %+v", event)
+	if len(events) != 1 || events[0].Index != 2 || events[0].Text != "hello" {
+		t.Fatalf("unexpected events: %+v", events)
 	}
 }

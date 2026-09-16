@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"ai-chat/backend/internal/message/domain"
 	"ai-chat/backend/internal/model"
@@ -21,11 +22,11 @@ func NewRepo(db *gorm.DB) *Repo { return &Repo{db: db} }
 func (r *Repo) List(ctx context.Context, uid, chatID uint64, page, size int) ([]domain.Message, int64, error) {
 	var rows []model.Message
 	var total int64
-	query := r.db.WithContext(ctx).Where("conversation_id = ?", chatID)
+	query := r.visible(ctx, uid).Where("messages.conversation_id = ?", chatID)
 	if err := query.Model(&model.Message{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := query.Offset((page - 1) * size).Limit(size).Order("id ASC").Find(&rows).Error
+	err := query.Select("messages.*").Offset((page - 1) * size).Limit(size).Order("messages.id ASC").Find(&rows).Error
 	return mapMsgs(rows), total, err
 }
 
@@ -47,21 +48,31 @@ func (r *Repo) Create(ctx context.Context, uid uint64, item domain.Message) (dom
 }
 
 // ListVariants 查询当前用户消息的候选回复。
-func (r *Repo) ListVariants(ctx context.Context, uid, messageID uint64) ([]domain.Variant, error) {
+func (r *Repo) ListVariants(ctx context.Context, uid, messageID uint64, page, size int) ([]domain.Variant, int64, error) {
 	var rows []model.MessageVariant
-	query := r.db.WithContext(ctx).Table("message_variants").
-		Joins("JOIN messages ON messages.id = message_variants.message_id").
-		Joins("JOIN conversations ON conversations.id = messages.conversation_id").
-		Where("message_variants.message_id = ? AND conversations.user_id = ?", messageID, uid).
-		Order("message_variants.variant_no ASC")
-	if err := query.Find(&rows).Error; err != nil {
-		return nil, err
+	var total int64
+	query := r.variants(ctx, uid, messageID)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := query.Select("message_variants.*").Order("message_variants.variant_no ASC, message_variants.id ASC").
+		Offset((page - 1) * size).Limit(size).Find(&rows).Error
+	if err != nil {
+		return nil, 0, err
 	}
 	out := make([]domain.Variant, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toVariant(row))
 	}
-	return out, nil
+	return out, total, nil
+}
+
+// variants 复用消息可见性子查询，避免连接表软删除条件遗漏和列名冲突。
+func (r *Repo) variants(ctx context.Context, uid, messageID uint64) *gorm.DB {
+	visible := r.owned(ctx, uid, messageID).Select("messages.id")
+	return r.db.WithContext(ctx).Model(&model.MessageVariant{}).
+		Where("message_variants.message_id IN (?)", visible).
+		Where("message_variants.deleted_at IS NULL")
 }
 
 // CreateVariant 保存当前用户消息的候选回复。
@@ -92,7 +103,7 @@ func (r *Repo) Find(ctx context.Context, uid, messageID uint64) (domain.Message,
 	var row model.Message
 	err := r.owned(ctx, uid, messageID).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domain.Message{}, errors.New("message not found")
+		return domain.Message{}, domain.ErrNotFound
 	}
 	return toMsg(row), err
 }
@@ -127,14 +138,21 @@ func (r *Repo) Delete(ctx context.Context, uid, messageID uint64) error {
 	if err := r.owned(ctx, uid, messageID).First(&row).Error; err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Delete(&row).Error
+	return r.db.WithContext(ctx).Model(&row).Update("deleted_at", time.Now().UTC()).Error
 }
 
 // owned 通过会话连接同时校验消息存在和消息所属用户。
 func (r *Repo) owned(ctx context.Context, uid, messageID uint64) *gorm.DB {
+	return r.visible(ctx, uid).Where("messages.id = ?", messageID)
+}
+
+// visible 统一消息列表及单条查询的用户范围与删除过滤。
+func (r *Repo) visible(ctx context.Context, uid uint64) *gorm.DB {
 	return r.db.WithContext(ctx).Model(&model.Message{}).
 		Joins("JOIN conversations ON conversations.id = messages.conversation_id").
-		Where("messages.id = ? AND conversations.user_id = ?", messageID, uid)
+		Where("conversations.user_id = ?", uid).
+		Where("messages.deleted_at IS NULL").
+		Where("conversations.deleted_at IS NULL")
 }
 
 // ownsMessage 校验消息归属，供候选回复写入复用。
@@ -157,7 +175,8 @@ func mapMsgs(rows []model.Message) []domain.Message {
 func toMsg(row model.Message) domain.Message {
 	return domain.Message{
 		ID: row.ID, ConversationID: row.ConversationID, ParentID: row.ParentID,
-		Role: row.Role, Content: row.Content, Status: row.Status,
+		SourceVariantID: row.SourceVariantID,
+		Role:            row.Role, Content: row.Content, Status: row.Status,
 		VariantNo: row.VariantNo, ExtraData: []byte(row.ExtraData),
 	}
 }

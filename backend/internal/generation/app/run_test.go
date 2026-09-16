@@ -64,14 +64,36 @@ func (r *msgRepo) Create(_ context.Context, _ uint64, item msgdomain.Message) (m
 type doneRepo struct {
 	msgdomain.Message
 	calls int
+	err   error
 }
 
 // SaveDone 模拟消息和生成状态的原子落库边界。
 func (r *doneRepo) SaveDone(_ context.Context, _, _ uint64, item msgdomain.Message, _ int64) (msgdomain.Message, error) {
 	r.calls++
+	if r.err != nil {
+		return msgdomain.Message{}, r.err
+	}
 	item.ID = 12
 	r.Message = item
 	return item, nil
+}
+
+// TestCandidateSaveError 验证事务失败不会返回成功消息，且会将生成任务转为失败。
+func TestCandidateSaveError(t *testing.T) {
+	cause := errors.New("transaction failed")
+	writer := &doneRepo{err: cause}
+	tasks := &taskRepo{}
+	runner := NewRunner(New(tasks), fakeProvider{stream: &fakeStream{
+		events: []provider.Event{
+			{Type: "delta", Text: "A"}, {Type: "delta", Index: 1, Text: "B"}, {Type: "done"},
+		},
+	}}, writer)
+	item, err := runner.Run(context.Background(), RunArgs{
+		UserID: 1, ConversationID: 2, GenerationID: 9, Request: provider.Request{N: 2},
+	})
+	if !errors.Is(err, cause) || item.ID != 0 || tasks.status != domain.StatusFailed {
+		t.Fatalf("item=%+v status=%s err=%v", item, tasks.status, err)
+	}
 }
 
 // Create 保持 DoneWriter 同时满足消息写入接口。
@@ -91,6 +113,29 @@ func (s *waitStream) Next(ctx context.Context) (provider.Event, error) {
 }
 
 func (s *waitStream) Close() error { close(s.closed); return nil }
+
+// TestSaveCandidates 验证不同候选独立组装并交由统一事务写入器保存。
+func TestSaveCandidates(t *testing.T) {
+	tasks := &taskRepo{}
+	writer := &doneRepo{}
+	runner := NewRunner(New(tasks), fakeProvider{stream: &fakeStream{
+		events: []provider.Event{
+			{Type: "delta", Index: 0, Text: "first"},
+			{Type: "delta", Index: 1, Text: "second"},
+			{Type: "done"},
+		},
+	}}, writer)
+	item, err := runner.Run(context.Background(), RunArgs{
+		UserID: 1, ConversationID: 2, GenerationID: 9,
+		Request: provider.Request{Model: "demo", N: 2},
+	})
+	if err != nil || item.ID != 12 || writer.calls != 1 {
+		t.Fatalf("item=%+v calls=%d err=%v", item, writer.calls, err)
+	}
+	if item.Content != "first" || len(writer.Variants) != 2 || writer.Variants[1].Content != "second" {
+		t.Fatalf("message=%+v", writer.Message)
+	}
+}
 
 // TestRun 验证文本增量会保存为 assistant 消息。
 func TestRun(t *testing.T) {

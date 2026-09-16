@@ -49,8 +49,13 @@ func (w *DoneWriter) SaveDone(ctx context.Context, userID, generationID uint64, 
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
+		variants, err := saveCandidates(tx, row.ID, item.Variants)
+		if err != nil {
+			return err
+		}
 		result := tx.Model(&model.Generation{}).
-			Where("user_id = ? AND id = ? AND status = ?", userID, generationID, "running").
+			Where("user_id = ? AND id = ? AND conversation_id = ? AND status = ?",
+				userID, generationID, item.ConversationID, "running").
 			Updates(map[string]any{"status": "completed", "message_id": row.ID, "finished_at": finished})
 		if result.Error != nil {
 			return result.Error
@@ -62,8 +67,12 @@ func (w *DoneWriter) SaveDone(ctx context.Context, userID, generationID uint64, 
 			ID: row.ID, ConversationID: row.ConversationID, ParentID: row.ParentID,
 			Role: row.Role, Content: row.Content, Status: row.Status,
 			VariantNo: row.VariantNo, ExtraData: []byte(row.ExtraData),
+			Variants: variants,
 		}
 		return nil
 	})
+	if err != nil {
+		return msgdomain.Message{}, err
+	}
 	return out, err
 }

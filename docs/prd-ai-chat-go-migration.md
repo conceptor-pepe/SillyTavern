@@ -105,7 +105,7 @@ GET  /api/v1/chats/:id/messages
 POST /api/v1/chats/:id/messages
 POST /api/v1/chats/:id/generations
 GET  /api/v1/generations/:id/stream
-POST /api/v1/generations/:id/cancel
+DELETE /api/v1/generations/:id
 
 POST /api/v1/messages/:id/regenerate
 PATCH /api/v1/messages/:id
@@ -128,6 +128,10 @@ favorites
 ```
 
 消息必须支持 `parent_id`，用于重新生成和分支对话。
+
+候选选择保留原消息，生成同父节点的独立回复。重复选择同一候选返回同一消息；
+后续用户消息引用选择结果作为父节点，已有分支不自动移动。来源通过
+`messages.source_variant_id` 可空唯一索引记录，已选消息删除后不自动恢复。
 
 ## 8. 非功能要求
 

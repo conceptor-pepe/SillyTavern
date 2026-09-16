@@ -4,13 +4,14 @@ package model
 // Message 保存会话中的一条正式消息。
 type Message struct {
 	Base
-	ConversationID uint64  `gorm:"not null;index"`
-	ParentID       *uint64 `gorm:"index"`
-	Role           string  `gorm:"size:32;not null;index"`
-	Content        string  `gorm:"type:longtext;not null"`
-	Status         string  `gorm:"size:32;not null;index"`
-	VariantNo      int     `gorm:"not null;default:0"`
-	ExtraData      string  `gorm:"type:json;not null"`
+	ConversationID  uint64  `gorm:"not null;index"`
+	ParentID        *uint64 `gorm:"index"`
+	SourceVariantID *uint64 `gorm:"uniqueIndex"`
+	Role            string  `gorm:"size:32;not null;index"`
+	Content         string  `gorm:"type:longtext;not null"`
+	Status          string  `gorm:"size:32;not null;index"`
+	VariantNo       int     `gorm:"not null;default:0"`
+	ExtraData       string  `gorm:"type:json;not null"`
 }
 
 // MessageVariant 保存同一消息位置的候选回复。

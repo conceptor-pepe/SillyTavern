@@ -4,7 +4,6 @@ package app
 import (
 	"context"
 	"errors"
-	"io"
 	"sync"
 	"time"
 
@@ -62,6 +61,16 @@ func (r *Runner) Cancel(id uint64) {
 
 // RunStream 执行生成并把每个文本增量交给调用方。
 func (r *Runner) RunStream(ctx context.Context, args RunArgs, send func(string) error) (item msgdomain.Message, err error) {
+	return r.RunEvents(ctx, args, func(event provider.Event) error {
+		if event.Index != 0 {
+			return nil
+		}
+		return sendDelta(send, event.Text)
+	})
+}
+
+// RunEvents 按候选索引推送增量，并在完整读取后统一落库。
+func (r *Runner) RunEvents(ctx context.Context, args RunArgs, send func(provider.Event) error) (msgdomain.Message, error) {
 	runCtx, stop := context.WithCancel(ctx)
 	r.addStop(args.GenerationID, stop)
 	defer r.delStop(args.GenerationID)
@@ -73,28 +82,38 @@ func (r *Runner) RunStream(ctx context.Context, args RunArgs, send func(string) 
 	if err != nil {
 		return r.fail(ctx, args, err)
 	}
-	defer func() {
-		closeErr := stream.Close()
-		if err == nil && closeErr != nil {
-			err = closeErr
-		}
-	}()
-	text, err := readStream(runCtx, stream, send)
+	variants, readErr := readCandidates(runCtx, stream, args.Request.N, send)
+	err = errors.Join(readErr, stream.Close())
 	if err != nil {
 		return r.fail(ctx, args, err)
 	}
 	msg := msgdomain.Message{
 		ConversationID: args.ConversationID, ParentID: args.ParentID,
-		Role: "assistant", Content: text, Status: "completed",
+		Role: "assistant", Content: variants[0].Content, Status: "completed",
 	}
-	if writer, ok := r.messages.(DoneWriter); ok {
-		return writer.SaveDone(runCtx, args.UserID, args.GenerationID, msg, time.Now().Unix())
+	if len(variants) > 1 {
+		msg.Variants = variants
 	}
-	item, err = r.messages.Create(runCtx, args.UserID, msg)
+	item, err := r.saveResult(runCtx, args, msg)
 	if err != nil {
 		return r.fail(ctx, args, err)
 	}
-	err = r.tasks.Finish(runCtx, args.UserID, args.GenerationID, item.ID, time.Now().Unix())
+	return item, nil
+}
+
+// saveResult 要求多候选使用事务写入器，禁止先完成任务再追加候选。
+func (r *Runner) saveResult(ctx context.Context, args RunArgs, msg msgdomain.Message) (msgdomain.Message, error) {
+	if writer, ok := r.messages.(DoneWriter); ok {
+		return writer.SaveDone(ctx, args.UserID, args.GenerationID, msg, time.Now().Unix())
+	}
+	if len(msg.Variants) > 1 {
+		return msgdomain.Message{}, errors.New("candidate transaction writer required")
+	}
+	item, err := r.messages.Create(ctx, args.UserID, msg)
+	if err != nil {
+		return msgdomain.Message{}, err
+	}
+	err = r.tasks.Finish(ctx, args.UserID, args.GenerationID, item.ID, time.Now().Unix())
 	return item, err
 }
 
@@ -112,7 +131,10 @@ func (r *Runner) delStop(id uint64) {
 	r.mu.Unlock()
 }
 
+// fail 使用独立短超时保存失败状态，客户端断开不应阻止任务收尾。
 func (r *Runner) fail(ctx context.Context, args RunArgs, cause error) (msgdomain.Message, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	failArgs := FailArgs{
 		UserID: args.UserID, ID: args.GenerationID, Code: "generation_failed",
 		Message: cause.Error(), Finished: time.Now().Unix(),
@@ -121,31 +143,6 @@ func (r *Runner) fail(ctx context.Context, args RunArgs, cause error) (msgdomain
 		return msgdomain.Message{}, errors.Join(cause, err)
 	}
 	return msgdomain.Message{}, cause
-}
-
-func readStream(ctx context.Context, stream provider.Stream, send func(string) error) (string, error) {
-	var text string
-	for {
-		event, err := stream.Next(ctx)
-		if err != nil {
-			return endStream(text, err)
-		}
-		text += event.Text
-		if err := sendDelta(send, event.Text); err != nil {
-			return "", err
-		}
-		if event.Type == "done" {
-			return text, nil
-		}
-	}
-}
-
-// endStream 统一处理流结束，兼容 Provider 以 EOF 表示正常结束。
-func endStream(text string, err error) (string, error) {
-	if errors.Is(err, io.EOF) {
-		return text, nil
-	}
-	return "", err
 }
 
 // sendDelta 发送非空文本增量，避免把回调判断嵌入流循环。

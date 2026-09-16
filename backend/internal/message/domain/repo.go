@@ -4,18 +4,27 @@ package domain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
+
+// ErrNotFound 隐藏不存在、已删除和其他用户消息之间的差异。
+var ErrNotFound = errors.New("message not found")
+
+// ErrConflict 表示消息当前状态不允许候选选择。
+var ErrConflict = errors.New("message state conflict")
 
 // Message 表示会话中的正式消息及其分支位置。
 type Message struct {
-	ID             uint64          `json:"id,string"`
-	ConversationID uint64          `json:"conversation_id,string"`
-	ParentID       *uint64         `json:"parent_id,string"`
-	Role           string          `json:"role"`
-	Content        string          `json:"content"`
-	Status         string          `json:"status"`
-	VariantNo      int             `json:"variant_no"`
-	ExtraData      json.RawMessage `json:"extra_data,omitempty"`
+	ID              uint64          `json:"id,string"`
+	ConversationID  uint64          `json:"conversation_id,string"`
+	ParentID        *uint64         `json:"parent_id,string"`
+	SourceVariantID *uint64         `json:"source_variant_id,string,omitempty"`
+	Role            string          `json:"role"`
+	Content         string          `json:"content"`
+	Status          string          `json:"status"`
+	VariantNo       int             `json:"variant_no"`
+	ExtraData       json.RawMessage `json:"extra_data,omitempty"`
+	Variants        []Variant       `json:"variants,omitempty"`
 }
 
 // Variant 表示同一消息位置的一条候选回复。
@@ -40,13 +49,23 @@ type Repo interface {
 
 // VariantRepo 提供候选回复的持久化能力。
 type VariantRepo interface {
-	ListVariants(ctx context.Context, userID, messageID uint64) ([]Variant, error)
+	ListVariants(ctx context.Context, userID, messageID uint64, page, size int) ([]Variant, int64, error)
 	CreateVariant(ctx context.Context, userID uint64, item Variant) (Variant, error)
+}
+
+// VariantSelector 在事务中校验候选归属并创建可重复读取的同父节点回复。
+type VariantSelector interface {
+	SelectVariant(ctx context.Context, userID, messageID, variantID uint64) (Message, error)
 }
 
 // Finder 提供按用户范围读取单条消息的能力。
 type Finder interface {
 	Find(ctx context.Context, userID, messageID uint64) (Message, error)
+}
+
+// BranchReader 返回指定消息及最近祖先，按祖先到叶节点排序且最多一百条。
+type BranchReader interface {
+	Branch(ctx context.Context, userID, chatID, messageID uint64) ([]Message, error)
 }
 
 // Mutator 提供受用户归属保护的消息修改能力。

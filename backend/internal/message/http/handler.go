@@ -31,6 +31,8 @@ func (h *Handler) Routes(engine *gin.Engine, auth gin.HandlerFunc) {
 	engine.POST("/api/v1/chats/:id/messages", auth, h.create)
 	engine.PATCH("/api/v1/messages/:id", auth, h.edit)
 	engine.DELETE("/api/v1/messages/:id", auth, h.delete)
+	engine.GET("/api/v1/messages/:id/variants", auth, h.variants)
+	engine.POST("/api/v1/messages/:id/variants/:variant/select", auth, h.selectVariant)
 }
 
 // edit 修改当前用户的一条消息内容。
@@ -148,9 +150,20 @@ func (h *Handler) fail(c *gin.Context, err error) {
 	if errors.Is(err, app.ErrQuery) {
 		status, code = http.StatusBadRequest, "INVALID_QUERY"
 	}
-	h.logger.Warn("message query failed", zap.String("request_id", c.GetString("request_id")),
-		zap.Uint64("user_id", userValue(c)), zap.String("chat_id", c.Param("id")),
-		zap.String("error_code", code), zap.Error(err))
+	if errors.Is(err, domain.ErrNotFound) {
+		status, code = http.StatusNotFound, "MESSAGE_NOT_FOUND"
+	}
+	if errors.Is(err, domain.ErrConflict) {
+		status, code = http.StatusConflict, "MESSAGE_CONFLICT"
+	}
+	fields := []zap.Field{zap.String("request_id", c.GetString("request_id")),
+		zap.Uint64("user_id", userValue(c)), zap.String("resource_id", c.Param("id")),
+		zap.String("route", c.FullPath()), zap.String("error_code", code), zap.Error(err)}
+	if status == http.StatusInternalServerError {
+		h.logger.Error("message request failed", fields...)
+	} else {
+		h.logger.Warn("message request rejected", fields...)
+	}
 	reply.Fail(c, status, code, http.StatusText(status))
 }
 
