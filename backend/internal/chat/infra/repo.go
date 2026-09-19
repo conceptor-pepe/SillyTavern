@@ -23,6 +23,7 @@ func (r *Repo) List(ctx context.Context, userID uint64, page, size int) ([]domai
 	var total int64
 	query := r.visible(ctx, userID)
 	if err := query.Model(&model.Conversation{}).Count(&total).Error; err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		return nil, 0, err
 	}
 	err := query.Offset((page - 1) * size).Limit(size).Order("last_msg_at DESC, id DESC").Find(&rows).Error
@@ -35,6 +36,7 @@ func (r *Repo) Recent(ctx context.Context, userID uint64, page, size int) ([]dom
 	var total int64
 	query := r.visible(ctx, userID).Where("last_msg_at IS NOT NULL")
 	if err := query.Model(&model.Conversation{}).Count(&total).Error; err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		return nil, 0, err
 	}
 	err := query.Offset((page - 1) * size).Limit(size).Order("last_msg_at DESC, id DESC").Find(&rows).Error
@@ -64,7 +66,16 @@ func (r *Repo) Create(ctx context.Context, item domain.Conversation) (domain.Con
 		UserID: item.UserID, CharacterID: item.CharacterID, Title: item.Title,
 		Status: item.Status, ExtraData: "{}",
 	}
-	if err := r.db.WithContext(ctx).Create(&row).Error; err != nil {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&row).Error; err != nil { // audit:allow-no-log 应用层记录仓储错误。
+			return err
+		}
+		relation := model.Relationship{UserID: item.UserID, CompanionID: item.CharacterID,
+			Stage: "acquaintance", Narrative: "", Milestones: "[]", Revision: 1}
+		return tx.Where("user_id = ? AND companion_id = ?", item.UserID, item.CharacterID).FirstOrCreate(&relation).Error
+	})
+	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		return domain.Conversation{}, err
 	}
 	return toChat(row), nil
@@ -99,5 +110,5 @@ func mapChats(rows []model.Conversation) []domain.Conversation {
 
 // toChat 转换单个会话模型。
 func toChat(row model.Conversation) domain.Conversation {
-	return domain.Conversation{ID: row.ID, UserID: row.UserID, CharacterID: row.CharacterID, Title: row.Title, Status: row.Status, LastMsgAt: row.LastMsgAt}
+	return domain.Conversation{Mode: row.Mode, ID: row.ID, UserID: row.UserID, CharacterID: row.CharacterID, Title: row.Title, Status: row.Status, LastMsgAt: row.LastMsgAt}
 }

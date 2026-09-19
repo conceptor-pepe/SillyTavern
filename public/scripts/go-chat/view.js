@@ -31,6 +31,7 @@ export function notice(message = '') {
 
 export function showPage(chat) {
     $('#create-view').hidden = true;
+    $('#story-view').hidden = true;
     document.body.classList.remove('in-create');
     $('#chat-view').hidden = !chat;
     $('#library-view').hidden = chat;
@@ -41,6 +42,7 @@ export function showPage(chat) {
     });
     $('#library').setAttribute('aria-current', chat ? 'false' : 'page');
     $('#create-character').setAttribute('aria-current', 'false');
+    $('#stories-nav').setAttribute('aria-current', 'false');
 }
 
 export function renderCharacters(items, favorites) {
@@ -129,7 +131,7 @@ export function renderChats(items, selected, characters = []) {
 export function renderDetail(item, favorite) {
     $('#detail-name').textContent = item.name;
     $('.detail-avatar').src = portrait(item);
-    const fields = [['简介', item.description], ['性格', item.personality], ['场景', item.scenario], ['开场白', item.first_message]];
+    const fields = [['性别', ({ female: '女性', male: '男性', other: '非二元' })[item.gender]], ['年龄', item.age], ['简介', item.description], ['性格', item.personality], ['场景', item.scenario], ['开场白', item.first_message], ['示例对话', item.message_sample]];
     $('#detail-body').replaceChildren(...fields.filter(([, value]) => value).flatMap(([label, value]) =>
         [element('h3', label), element('p', value)]));
     $('#detail-body').scrollTop = 0;
@@ -204,6 +206,7 @@ function renderMessage(item, session) {
         summary.append(element('i', undefined, 'fa-solid fa-ellipsis'));
         const panel = element('div', undefined, 'message-menu-items');
         if (item.role === 'user') panel.append(tool('edit', 'pen', '编辑消息', item.id));
+        if (item.role === 'assistant') panel.append(tool('revise', 'pen-to-square', '编辑 AI 回复并创建分支', item.id));
         panel.append(tool('remove', 'trash', '删除消息', item.id));
         menu.append(summary, panel);
         actions.append(menu);

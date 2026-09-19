@@ -4,6 +4,7 @@ package infra
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"ai-chat/backend/internal/character/domain"
 	"ai-chat/backend/internal/model"
@@ -44,7 +45,7 @@ func (r *Repo) Create(ctx context.Context, item domain.Character) (domain.Charac
 func (r *Repo) List(ctx context.Context, userID uint64, page, size int) ([]domain.Character, int64, error) {
 	var rows []model.Character
 	var total int64
-	query := r.db.WithContext(ctx).Where("user_id = ?", userID)
+	query := r.db.WithContext(ctx).Where("user_id = ? AND deleted_at IS NULL", userID)
 	if err := query.Model(&model.Character{}).Count(&total).Error; err != nil {
 		// audit:allow-no-log 由角色 Handler 统一记录查询失败和用户上下文。
 		return nil, 0, err
@@ -56,7 +57,10 @@ func (r *Repo) List(ctx context.Context, userID uint64, page, size int) ([]domai
 // Find 查询指定用户拥有的单个角色。
 func (r *Repo) Find(ctx context.Context, userID, id uint64) (domain.Character, error) {
 	var row model.Character
-	err := r.db.WithContext(ctx).Where("user_id = ? AND id = ?", userID, id).First(&row).Error
+	err := r.db.WithContext(ctx).Where("user_id = ? AND id = ? AND deleted_at IS NULL", userID, id).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.Character{}, domain.ErrNotFound
+	}
 	return toChar(row), err
 }
 
@@ -64,7 +68,7 @@ func (r *Repo) Find(ctx context.Context, userID, id uint64) (domain.Character, e
 func (r *Repo) Owns(ctx context.Context, userID, id uint64) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.Character{}).
-		Where("user_id = ? AND id = ?", userID, id).Count(&count).Error
+		Where("user_id = ? AND id = ? AND deleted_at IS NULL", userID, id).Count(&count).Error
 	return count == 1, err
 }
 

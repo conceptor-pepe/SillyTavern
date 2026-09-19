@@ -76,6 +76,11 @@ type Mutator interface {
 	Delete(ctx context.Context, userID, messageID uint64) error
 }
 
+// AssistantReviser 从已有 AI 回复创建同位置的新分支，不覆盖原消息。
+type AssistantReviser interface {
+	ReviseAssistant(ctx context.Context, userID, messageID uint64, content string) (Message, error)
+}
+
 // ParentChecker 校验父消息是否属于指定用户会话。
 type ParentChecker interface {
 	OwnsInChat(ctx context.Context, userID, chatID, messageID uint64) (bool, error)

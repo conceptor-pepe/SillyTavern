@@ -96,6 +96,56 @@ test('candidate APIs preserve string IDs, encode paths and return data', async t
     assert.equal(calls[1].options.body, undefined);
 });
 
+test('story, persona and guided reply APIs use encoded resource paths', async t => {
+    const calls = [];
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+        calls.push({ url, options });
+        return Response.json({ code: 'OK', data: { id: '9007199254740993' } });
+    });
+    await apiClient.updateStory('story/a', { expected_revision: '2', definition: { title: '夜航' } });
+    await apiClient.freezeStory('story/a', { expected_revision: '3' });
+    await apiClient.publishStory('story/a', { expected_revision: '3' });
+    await apiClient.unpublishStory('story/a');
+    await apiClient.publicStories('?page=2&q=night');
+    await apiClient.publicStory('story/a');
+    await apiClient.updatePersona('persona/a', { expected_revision: '4', name: '旅人' });
+    await apiClient.relationship('chat/a');
+    await apiClient.updateRelationship('chat/a', { stage: 'close' });
+    await apiClient.relationshipMemories('companion/a');
+    await apiClient.saveRelationshipMemory('companion/a', { content: '记得雨夜' });
+    await apiClient.deleteRelationshipMemory('companion/a', 'memory/a');
+    await apiClient.memoryCandidates('chat/a');
+    await apiClient.extractMemoryCandidates('chat/a', { leaf_id: '5' });
+    await apiClient.acceptMemoryCandidate('candidate/a');
+    await apiClient.rejectMemoryCandidate('candidate/a');
+    await apiClient.replySuggestions('chat/a', { parent_id: '5' });
+    const revised = await apiClient.reviseAssistant('message/a', { content: '新的回答' });
+
+    assert.equal(revised.id, '9007199254740993');
+    assert.deepEqual(calls.map(call => [call.url, call.options.method]), [
+        ['/api/v1/stories/story%2Fa', 'PUT'],
+        ['/api/v1/stories/story%2Fa/versions', 'POST'],
+        ['/api/v1/stories/story%2Fa/publication', 'POST'],
+        ['/api/v1/stories/story%2Fa/publication', 'DELETE'],
+        ['/api/v1/public/stories?page=2&q=night', undefined],
+        ['/api/v1/public/stories/story%2Fa', undefined],
+        ['/api/v1/personas/persona%2Fa', 'PUT'],
+        ['/api/v1/chats/chat%2Fa/relationship', undefined],
+        ['/api/v1/chats/chat%2Fa/relationship', 'PUT'],
+        ['/api/v1/relationships/companion%2Fa/memories', undefined],
+        ['/api/v1/relationships/companion%2Fa/memories', 'POST'],
+        ['/api/v1/relationships/companion%2Fa/memories/memory%2Fa', 'DELETE'],
+        ['/api/v1/chats/chat%2Fa/memory-candidates', undefined],
+        ['/api/v1/chats/chat%2Fa/memory-candidates', 'POST'],
+        ['/api/v1/memory-candidates/candidate%2Fa/accept', 'POST'],
+        ['/api/v1/memory-candidates/candidate%2Fa', 'DELETE'],
+        ['/api/v1/chats/chat%2Fa/reply-suggestions', 'POST'],
+        ['/api/v1/messages/message%2Fa/revisions', 'POST'],
+    ]);
+    assert.deepEqual(JSON.parse(calls[16].options.body), { parent_id: '5' });
+    assert.equal(calls.every(call => call.options.credentials === 'include'), true);
+});
+
 test('generation and regeneration share SSE transport and abort signal', async t => {
     const calls = [];
     const signal = new AbortController().signal;

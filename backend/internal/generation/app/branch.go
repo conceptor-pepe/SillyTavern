@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	msgdomain "ai-chat/backend/internal/message/domain"
+	"go.uber.org/zap"
 )
 
 // ErrBranch 表示分支损坏或请求内容与已保存的用户消息冲突。
@@ -14,10 +15,12 @@ var ErrBranch = errors.New("invalid message branch")
 
 // BranchArgs 标记本次回复所依据的已保存用户消息。
 type BranchArgs struct {
-	UserID  uint64
-	ChatID  uint64
-	LeafID  uint64
-	Content string
+	UserID   uint64
+	ChatID   uint64
+	LeafID   uint64
+	Content  string
+	LeafRole string
+	Logger   *zap.Logger
 }
 
 // LoadBranch 验证父链完整性后返回历史，叶节点文本不再重复追加。
@@ -27,12 +30,23 @@ func LoadBranch(ctx context.Context, repo msgdomain.BranchReader, args BranchArg
 	}
 	items, err := repo.Branch(ctx, args.UserID, args.ChatID, args.LeafID)
 	if err != nil {
+		branchLogger(args.Logger).Error("message branch query failed", zap.Uint64("user_id", args.UserID),
+			zap.Uint64("chat_id", args.ChatID), zap.Uint64("leaf_id", args.LeafID), zap.Error(err))
 		return nil, err
 	}
 	if err := checkBranch(items, args); err != nil {
+		branchLogger(args.Logger).Warn("message branch rejected", zap.Uint64("user_id", args.UserID),
+			zap.Uint64("chat_id", args.ChatID), zap.Uint64("leaf_id", args.LeafID), zap.Error(err))
 		return nil, err
 	}
 	return items, nil
+}
+
+func branchLogger(logger *zap.Logger) *zap.Logger {
+	if logger == nil {
+		return zap.NewNop()
+	}
+	return logger
 }
 
 // checkBranch 检测断链、环和跨会话记录，一百条满窗允许省略更早祖先。
@@ -54,7 +68,11 @@ func checkBranch(items []msgdomain.Message, args BranchArgs) error {
 	if head.ParentID != nil && (len(items) < 100 || seen[*head.ParentID]) {
 		return ErrBranch
 	}
-	if leaf.ID != args.LeafID || leaf.Role != "user" || strings.TrimSpace(leaf.Content) == "" {
+	role := args.LeafRole
+	if role == "" {
+		role = "user"
+	}
+	if leaf.ID != args.LeafID || leaf.Role != role || strings.TrimSpace(leaf.Content) == "" {
 		return ErrBranch
 	}
 	if args.Content != "" && args.Content != leaf.Content {

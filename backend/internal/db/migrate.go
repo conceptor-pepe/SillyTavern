@@ -4,7 +4,9 @@ package db
 import (
 	"context"
 
+	"ai-chat/backend/internal/logx"
 	"ai-chat/backend/internal/model"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -12,12 +14,31 @@ import (
 func Migrate(ctx context.Context, conn *gorm.DB) error {
 	return schemaLock(ctx, conn, func(conn *gorm.DB) error {
 		if err := prepareChange(conn); err != nil {
+			zap.L().Error("schema migration failed", zap.Error(logx.SafeError(err)))
 			return err
 		}
 		if err := checkLegacy(conn); err != nil {
+			zap.L().Error("schema migration failed", zap.Error(logx.SafeError(err)))
 			return err
 		}
 		if err := createTables(ctx, conn); err != nil {
+			zap.L().Error("schema migration failed", zap.Error(logx.SafeError(err)))
+			return err
+		}
+		if err := migrateStory(conn); err != nil {
+			zap.L().Error("story migration failed", zap.Error(logx.SafeError(err)))
+			return err
+		}
+		if err := migratePublication(conn); err != nil {
+			zap.L().Error("story publication migration failed", zap.Error(logx.SafeError(err)))
+			return err
+		}
+		if err := migrateRelationship(conn); err != nil {
+			zap.L().Error("relationship migration failed", zap.Error(logx.SafeError(err)))
+			return err
+		}
+		if err := migrateMemoryCandidate(conn); err != nil {
+			zap.L().Error("memory candidate migration failed", zap.Error(logx.SafeError(err)))
 			return err
 		}
 		return fixFavorites(conn)
@@ -36,5 +57,10 @@ func createTables(ctx context.Context, conn *gorm.DB) error {
 		&model.MessageVariant{},
 		&model.Generation{},
 		&model.Asset{},
+		&model.Background{},
+		&model.Memory{},
+		&model.MemorySummary{},
+		&model.Relationship{},
+		&model.MemoryCandidate{},
 	)
 }

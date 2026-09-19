@@ -41,7 +41,7 @@ func newFlow(t *testing.T, upstream http.Handler) *flowEnv {
 	t.Cleanup(provider.Close)
 	server, err := New(config.Config{
 		MySQLDSN: conn.Dialector.(*mysql.Dialector).DSN, AuthSecret: "integration-test-secret",
-		ProviderURL: provider.URL, RedisAddr: os.Getenv("AI_CHAT_TEST_REDIS_ADDR"),
+		ProviderURL: provider.URL, ProviderModel: "test", RedisAddr: os.Getenv("AI_CHAT_TEST_REDIS_ADDR"),
 	}, zap.NewNop())
 	if err != nil {
 		t.Fatal(err)

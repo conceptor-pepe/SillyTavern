@@ -2,6 +2,8 @@
 package generationhttp
 
 import (
+	memdomain "ai-chat/backend/internal/memory/domain"
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -26,11 +28,19 @@ type Handler struct {
 	msgs         msgdomain.Repo
 	logger       *zap.Logger
 	defaultModel string
+	story        StoryContext
+	memory       ContextBuilder
+	suggester    *app.Suggester
+	outputTokens int
 }
 
 // Deps 保存生成 Handler 的跨域查询依赖。
 type Deps struct {
 	DefaultModel string
+	Story        StoryContext
+	Memory       ContextBuilder
+	Suggester    *app.Suggester
+	OutputTokens int
 	Chats        chatdomain.Repo
 	Chars        chardomain.Repo
 	Msgs         msgdomain.Repo
@@ -49,12 +59,13 @@ type runArgs struct {
 
 // New 创建生成 SSE Handler。
 func New(tasks *app.Service, runner *app.Runner, deps Deps, logger *zap.Logger) *Handler {
-	return &Handler{tasks: tasks, runner: runner, chats: deps.Chats, chars: deps.Chars, msgs: deps.Msgs, logger: logger, defaultModel: deps.DefaultModel}
+	return &Handler{tasks: tasks, runner: runner, chats: deps.Chats, chars: deps.Chars, msgs: deps.Msgs, logger: logger, defaultModel: deps.DefaultModel, story: deps.Story, memory: deps.Memory, suggester: deps.Suggester, outputTokens: deps.OutputTokens}
 }
 
 // Routes 注册生成接口。
 func (h *Handler) Routes(engine *gin.Engine, auth gin.HandlerFunc) {
 	engine.POST("/api/v1/chats/:id/generations", auth, h.stream)
+	engine.POST("/api/v1/chats/:id/reply-suggestions", auth, h.suggestions)
 	engine.POST("/api/v1/messages/:id/regenerate", auth, h.regenerate)
 	engine.GET("/api/v1/generations/:id", auth, h.find)
 	engine.DELETE("/api/v1/generations/:id", auth, h.cancel)
@@ -64,6 +75,7 @@ func (h *Handler) Routes(engine *gin.Engine, auth gin.HandlerFunc) {
 func (h *Handler) regenerate(c *gin.Context) {
 	uid, messageID, err := readMessageID(c)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, uid, 0, err)
 		return
 	}
@@ -73,6 +85,7 @@ func (h *Handler) regenerate(c *gin.Context) {
 	}
 	in.Model = h.defaultModel
 	if err := c.ShouldBindJSON(&in); err != nil || in.Model == "" {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		c.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_BODY", "message": "model is required"})
 		return
 	}
@@ -83,6 +96,7 @@ func (h *Handler) regenerate(c *gin.Context) {
 	}
 	old, err := finder.Find(c.Request.Context(), uid, messageID)
 	if err != nil || old.Role != "assistant" {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, uid, messageID, errors.New("assistant message not found"))
 		return
 	}
@@ -92,11 +106,13 @@ func (h *Handler) regenerate(c *gin.Context) {
 	}
 	prompt, err := h.prompt(c, promptArgs{uid: uid, chatID: old.ConversationID, parentID: old.ParentID})
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, uid, messageID, err)
 		return
 	}
 	task, err := h.create(c, uid, old.ConversationID, in.Model)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, uid, messageID, err)
 		return
 	}
@@ -107,6 +123,7 @@ func (h *Handler) regenerate(c *gin.Context) {
 func (h *Handler) find(c *gin.Context) {
 	uid, id, err := readIDs(c)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		c.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_QUERY", "message": "invalid query"})
 		return
 	}
@@ -116,6 +133,7 @@ func (h *Handler) find(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, uid, id, err)
 		return
 	}
@@ -126,6 +144,7 @@ func (h *Handler) find(c *gin.Context) {
 func (h *Handler) stream(c *gin.Context) {
 	uid, chatID, err := readIDs(c)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		c.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_QUERY", "message": "invalid query"})
 		return
 	}
@@ -138,22 +157,26 @@ func (h *Handler) stream(c *gin.Context) {
 	}
 	in.Model = h.defaultModel
 	if err := c.ShouldBindJSON(&in); err != nil || in.Model == "" {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		c.JSON(http.StatusBadRequest, gin.H{"code": "INVALID_BODY", "message": "invalid body"})
 		return
 	}
 	owned, err := h.chats.Owns(c.Request.Context(), uid, chatID)
 	if err != nil || !owned {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		c.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND", "message": "chat not found"})
 		return
 	}
 	content := lastUser(in.Content, in.Messages)
 	prompt, err := h.prompt(c, promptArgs{uid: uid, chatID: chatID, parentID: in.ParentID, content: content})
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, uid, 0, err)
 		return
 	}
 	task, err := h.create(c, uid, chatID, in.Model)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, uid, task.ID, err)
 		return
 	}
@@ -164,17 +187,19 @@ func (h *Handler) stream(c *gin.Context) {
 func (h *Handler) run(c *gin.Context, args runArgs) {
 	h.open(c)
 	if err := h.send(c, "message_start", gin.H{"generation_id": args.task.ID}); err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.logSend(args.uid, args.task.ID, err)
 		h.cancelStart(c, args)
 		return
 	}
 	item, err := h.runner.RunEvents(c.Request.Context(), app.RunArgs{
 		UserID: args.uid, ConversationID: args.chatID, GenerationID: args.task.ID,
-		ParentID: args.parentID, Request: provider.Request{Model: args.model, Messages: args.prompt, Stream: true, N: args.count},
+		ParentID: args.parentID, Request: provider.Request{Model: args.model, Messages: args.prompt, Stream: true, N: args.count, MaxTokens: h.outputTokens},
 	}, func(event provider.Event) error {
 		return h.send(c, "message_delta", gin.H{"text": event.Text, "index": event.Index})
 	})
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.logger.Error("generation run failed", zap.Uint64("user_id", args.uid),
 			zap.Uint64("chat_id", args.chatID), zap.Uint64("generation_id", args.task.ID),
 			zap.String("request_id", c.GetString("request_id")), zap.Error(logx.SafeError(err)))
@@ -182,6 +207,7 @@ func (h *Handler) run(c *gin.Context, args runArgs) {
 		return
 	}
 	if err := h.send(c, "message_end", gin.H{"message_id": item.ID, "generation_id": args.task.ID, "variants": item.Variants}); err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.logSend(args.uid, args.task.ID, err)
 	}
 }
@@ -189,6 +215,7 @@ func (h *Handler) run(c *gin.Context, args runArgs) {
 // sendErr 向客户端发送统一的生成失败事件。
 func (h *Handler) sendErr(c *gin.Context, uid, taskID uint64) {
 	if err := h.send(c, "generation_error", gin.H{"message": "generation failed"}); err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.logSend(uid, taskID, err)
 	}
 }
@@ -216,12 +243,17 @@ func lastUser(content string, items []provider.Message) string {
 // logSend 记录 SSE 客户端断开等发送错误。
 func (h *Handler) logSend(uid, taskID uint64, err error) {
 	h.logger.Warn("generation stream send failed", zap.Uint64("user_id", uid),
-		zap.Uint64("generation_id", taskID), zap.Error(err))
+		zap.Uint64("generation_id", taskID), zap.Error(logx.SafeError(err)))
 }
 
 // fail 返回稳定错误并记录上下文，不向客户端泄漏内部存储错误。
 func (h *Handler) fail(c *gin.Context, uid, taskID uint64, err error) {
-	if errors.Is(err, chatdomain.ErrNotFound) {
+	if errors.Is(err, memdomain.ErrBudget) {
+		h.logger.Warn("context budget exceeded", zap.Uint64("user_id", uid), zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"code": "CONTEXT_TOO_LARGE", "message": "当前消息、角色设定或常驻记忆过长，请缩短后重试"})
+		return
+	}
+	if errors.Is(err, chatdomain.ErrNotFound) || errors.Is(err, chardomain.ErrNotFound) {
 		h.logger.Warn("generation chat unavailable", zap.Uint64("user_id", uid), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND", "message": "chat not found"})
 		return
@@ -232,7 +264,7 @@ func (h *Handler) fail(c *gin.Context, uid, taskID uint64, err error) {
 		return
 	}
 	h.logger.Error("generation create failed", zap.Uint64("user_id", uid),
-		zap.Uint64("generation_id", taskID), zap.Error(err))
+		zap.Uint64("generation_id", taskID), zap.Error(logx.SafeError(err)))
 	c.JSON(http.StatusInternalServerError, gin.H{"code": "INTERNAL_ERROR", "message": "internal error"})
 }
 
@@ -242,6 +274,7 @@ func readIDs(c *gin.Context) (uint64, uint64, error) {
 	uid, valid := value.(uint64)
 	chatID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if !ok || !valid || uid == 0 || err != nil || chatID == 0 {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		return 0, 0, errors.New("invalid ids")
 	}
 	return uid, chatID, nil
@@ -253,7 +286,18 @@ func readMessageID(c *gin.Context) (uint64, uint64, error) {
 	uid, valid := value.(uint64)
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if !ok || !valid || uid == 0 || err != nil || id == 0 {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		return 0, 0, errors.New("invalid message id")
 	}
 	return uid, id, nil
+}
+
+// ContextBuilder 将长期记忆规则交给独立应用服务。
+type ContextBuilder interface {
+	Build(ctx context.Context, character chardomain.Character, history []msgdomain.Message) ([]provider.Message, error)
+}
+
+// StoryContext 从冻结快照构建故事输入，不复用可变角色查询。
+type StoryContext interface {
+	Build(ctx context.Context, uid, chatID uint64, history []msgdomain.Message) ([]provider.Message, error)
 }

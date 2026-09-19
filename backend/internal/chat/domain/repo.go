@@ -11,6 +11,7 @@ var ErrNotFound = errors.New("conversation not found")
 
 // Conversation 表示用户与角色之间的一次聊天会话。
 type Conversation struct {
+	Mode        string `json:"mode"`
 	ID          uint64 `json:"id,string"`
 	UserID      uint64 `json:"-"`
 	CharacterID uint64 `json:"character_id,string"`

@@ -13,6 +13,7 @@ import (
 type fakeMutator struct {
 	updated bool
 	deleted bool
+	revised bool
 	err     error
 }
 
@@ -26,6 +27,12 @@ func (f *fakeMutator) Update(_ context.Context, _, _ uint64, content string) (do
 func (f *fakeMutator) Delete(_ context.Context, _, _ uint64) error {
 	f.deleted = true
 	return f.err
+}
+
+// ReviseAssistant 模拟创建 AI 编辑分支。
+func (f *fakeMutator) ReviseAssistant(_ context.Context, _, _ uint64, content string) (domain.Message, error) {
+	f.revised = true
+	return domain.Message{ID: 3, Role: "assistant", Content: content}, f.err
 }
 
 // fakeRepo 同时提供创建能力和消息变更能力。
@@ -72,6 +79,10 @@ func TestWriteEditDelete(t *testing.T) {
 	if err := write.Delete(context.Background(), 1, 2); err != nil || !mutator.deleted {
 		t.Fatalf("err=%v deleted=%v", err, mutator.deleted)
 	}
+	revised, err := write.ReviseAssistant(context.Background(), 1, 2, "edited reply")
+	if err != nil || revised.Content != "edited reply" || !mutator.revised {
+		t.Fatalf("item=%+v err=%v revised=%v", revised, err, mutator.revised)
+	}
 }
 
 // TestWriteRejectsInvalid 验证空内容、无能力 Repository 和底层错误均不会被吞掉。
@@ -80,6 +91,9 @@ func TestWriteRejectsInvalid(t *testing.T) {
 	if _, err := write.Edit(context.Background(), 1, 2, " "); !errors.Is(err, ErrQuery) {
 		t.Fatalf("empty edit error=%v", err)
 	}
+	if _, err := write.ReviseAssistant(context.Background(), 1, 2, " "); !errors.Is(err, ErrQuery) {
+		t.Fatalf("empty revision error=%v", err)
+	}
 	if err := write.Delete(context.Background(), 0, 2); !errors.Is(err, ErrQuery) {
 		t.Fatalf("empty user error=%v", err)
 	}
@@ -87,6 +101,9 @@ func TestWriteRejectsInvalid(t *testing.T) {
 	write = NewWrite(base, nil)
 	if _, err := write.Edit(context.Background(), 1, 2, "ok"); !errors.Is(err, ErrQuery) {
 		t.Fatalf("missing mutator error=%v", err)
+	}
+	if _, err := write.ReviseAssistant(context.Background(), 1, 2, "ok"); !errors.Is(err, ErrQuery) {
+		t.Fatalf("missing reviser error=%v", err)
 	}
 }
 
@@ -119,7 +136,7 @@ func TestWriteParentError(t *testing.T) {
 	_, err := write.Create(context.Background(), 1, 2, domain.Message{
 		ConversationID: 2, ParentID: &parent, Content: "reply",
 	})
-	if !errors.Is(err, ErrQuery) {
+	if !errors.Is(err, cause) {
 		t.Fatalf("parent error=%v", err)
 	}
 }

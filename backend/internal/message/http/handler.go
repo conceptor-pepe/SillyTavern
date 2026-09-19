@@ -22,7 +22,7 @@ type Handler struct {
 
 // New 创建消息 Handler。
 func New(messages app.MessageRepo, chats app.ChatRepo, logger *zap.Logger) *Handler {
-	return &Handler{query: app.NewQuery(messages, chats), write: app.NewWrite(messages, chats), logger: logger}
+	return &Handler{query: app.NewQuery(messages, chats), write: app.NewWrite(messages, chats, logger), logger: logger}
 }
 
 // Routes 注册受保护的消息历史接口。
@@ -30,6 +30,7 @@ func (h *Handler) Routes(engine *gin.Engine, auth gin.HandlerFunc) {
 	engine.GET("/api/v1/chats/:id/messages", auth, h.list)
 	engine.POST("/api/v1/chats/:id/messages", auth, h.create)
 	engine.PATCH("/api/v1/messages/:id", auth, h.edit)
+	engine.POST("/api/v1/messages/:id/revisions", auth, h.reviseAssistant)
 	engine.DELETE("/api/v1/messages/:id", auth, h.delete)
 	engine.GET("/api/v1/messages/:id/variants", auth, h.variants)
 	engine.POST("/api/v1/messages/:id/variants/:variant/select", auth, h.selectVariant)
@@ -38,19 +39,19 @@ func (h *Handler) Routes(engine *gin.Engine, auth gin.HandlerFunc) {
 // edit 修改当前用户的一条消息内容。
 func (h *Handler) edit(c *gin.Context) {
 	uid, messageID, err := readMessage(c)
-	if err != nil {
+	if err != nil { // audit:allow-no-log h.fail records the rejection with request context.
 		h.fail(c, err)
 		return
 	}
 	var in struct {
 		Content string `json:"content"`
 	}
-	if err := c.ShouldBindJSON(&in); err != nil {
+	if err := c.ShouldBindJSON(&in); err != nil { // audit:allow-no-log h.fail records the rejection with request context.
 		h.fail(c, app.ErrQuery)
 		return
 	}
 	item, err := h.write.Edit(c.Request.Context(), uid, messageID, in.Content)
-	if err != nil {
+	if err != nil { // audit:allow-no-log h.fail records the failure with request context.
 		h.fail(c, err)
 		return
 	}
@@ -61,11 +62,11 @@ func (h *Handler) edit(c *gin.Context) {
 // delete 删除当前用户的一条消息，并保留数据库软删除记录。
 func (h *Handler) delete(c *gin.Context) {
 	uid, messageID, err := readMessage(c)
-	if err != nil {
+	if err != nil { // audit:allow-no-log h.fail records the rejection with request context.
 		h.fail(c, err)
 		return
 	}
-	if err := h.write.Delete(c.Request.Context(), uid, messageID); err != nil {
+	if err := h.write.Delete(c.Request.Context(), uid, messageID); err != nil { // audit:allow-no-log h.fail records the failure with request context.
 		h.fail(c, err)
 		return
 	}
@@ -76,7 +77,7 @@ func (h *Handler) delete(c *gin.Context) {
 // create 保存当前用户发送的一条消息。
 func (h *Handler) create(c *gin.Context) {
 	uid, chatID, _, _, err := readArgs(c)
-	if err != nil {
+	if err != nil { // audit:allow-no-log h.fail records the rejection with request context.
 		h.fail(c, err)
 		return
 	}
@@ -84,14 +85,14 @@ func (h *Handler) create(c *gin.Context) {
 		Content  string  `json:"content"`
 		ParentID *uint64 `json:"parent_id,string"`
 	}
-	if err := c.ShouldBindJSON(&in); err != nil {
+	if err := c.ShouldBindJSON(&in); err != nil { // audit:allow-no-log h.fail records the rejection with request context.
 		h.fail(c, app.ErrQuery)
 		return
 	}
 	item, err := h.write.Create(c.Request.Context(), uid, chatID, domain.Message{
 		ConversationID: chatID, ParentID: in.ParentID, Content: in.Content,
 	})
-	if err != nil {
+	if err != nil { // audit:allow-no-log h.fail records the failure with request context.
 		h.fail(c, err)
 		return
 	}
@@ -103,12 +104,12 @@ func (h *Handler) create(c *gin.Context) {
 // list 返回当前用户可见会话的消息历史。
 func (h *Handler) list(c *gin.Context) {
 	uid, chatID, page, size, err := readArgs(c)
-	if err != nil {
+	if err != nil { // audit:allow-no-log h.fail records the rejection with request context.
 		h.fail(c, err)
 		return
 	}
 	items, total, err := h.query.List(c.Request.Context(), uid, chatID, page, size)
-	if err != nil {
+	if err != nil { // audit:allow-no-log h.fail records the failure with request context.
 		h.fail(c, err)
 		return
 	}
@@ -127,7 +128,7 @@ func readArgs(c *gin.Context) (uint64, uint64, int, int, error) {
 	chatID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	page, pageErr := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, sizeErr := strconv.Atoi(c.DefaultQuery("size", "20"))
-	if !ok || err != nil || pageErr != nil || sizeErr != nil {
+	if !ok || err != nil || pageErr != nil || sizeErr != nil { // audit:allow-no-log callers pass this error to h.fail.
 		return 0, 0, 0, 0, app.ErrQuery
 	}
 	return uid, chatID, page, size, nil
@@ -138,7 +139,7 @@ func readMessage(c *gin.Context) (uint64, uint64, error) {
 	value, _ := c.Get("user_id")
 	uid, ok := value.(uint64)
 	messageID, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if !ok || err != nil || uid == 0 || messageID == 0 {
+	if !ok || err != nil || uid == 0 || messageID == 0 { // audit:allow-no-log callers pass this error to h.fail.
 		return 0, 0, app.ErrQuery
 	}
 	return uid, messageID, nil

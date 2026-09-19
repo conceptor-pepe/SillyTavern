@@ -15,11 +15,13 @@ function storage() {
 }
 
 /** 写操作同步到服务端数组，使重新加载读取真实的模拟持久化结果。 */
-function fixture(initial = []) {
+function fixture(initial = [], chat = { id: '10' }) {
     const db = initial.map(item => ({ ...item }));
     const calls = [];
     const api = {
-        chat: async id => ({ id }),
+        chat: async id => ({ ...chat, id }),
+        chatBootstrap: async id => ({ story: { title: '夜航' }, chat_id: id }),
+        relationship: async () => null,
         messages: async () => ({ items: db.map(item => ({ ...item })), total: String(db.length) }),
         addMessage: async (_id, body) => {
             calls.push('save');
@@ -30,6 +32,16 @@ function fixture(initial = []) {
         cancelGeneration: async id => { calls.push(`cancel:${id}`); },
         deleteMessage: async id => { db.splice(db.findIndex(item => item.id === id), 1); },
         editMessage: async (id, body) => Object.assign(db.find(item => item.id === id), body),
+        reviseAssistant: async (id, body) => {
+            const source = db.find(item => item.id === id);
+            const item = { ...source, ...body, id: String(db.length + 1), parent_id: source.parent_id };
+            db.push(item);
+            return { ...item };
+        },
+        replySuggestions: async (id, body) => {
+            calls.push(`suggest:${id}:${body.parent_id}:${body.model || ''}`);
+            return { items: ['继续追问', '换个话题'] };
+        },
     };
     const prefs = preferences('10', storage());
     const generate = async (_id, body, handlers) => {
@@ -196,6 +208,34 @@ test('regeneration targets original assistant without saving another question', 
     assert.equal(f.session.leaf, '3');
     assert.equal(f.db[1].content, '回复');
     assert.deepEqual(f.calls, []);
+});
+
+test('assistant revision creates a sibling branch and preserves the source reply', async () => {
+    const f = fixture([question, answer]);
+    await f.session.open('10');
+    await f.session.revise(' 更自然的回复 ');
+    assert.deepEqual(f.session.path.map(item => item.id), ['1', '3']);
+    assert.equal(f.db.find(item => item.id === '2').content, '回复');
+    assert.equal(f.db.find(item => item.id === '3').content, '更自然的回复');
+    assert.equal(f.db.find(item => item.id === '3').parent_id, '1');
+});
+
+test('reply suggestions anchor to the assistant leaf without changing history', async () => {
+    const f = fixture([question, answer]);
+    await f.session.open('10');
+    const result = await f.session.suggestions('guided');
+    assert.deepEqual(result.items, ['继续追问', '换个话题']);
+    assert.deepEqual(f.calls, ['suggest:10:2:guided']);
+    assert.equal(f.db.length, 2);
+    f.session.choose('1');
+    await assert.rejects(f.session.suggestions(), /AI 回复/);
+});
+
+test('story chat loads its frozen bootstrap alongside message history', async () => {
+    const f = fixture([question, answer], { id: '10', mode: 'story' });
+    await f.session.open('10');
+    assert.deepEqual(f.session.story, { story: { title: '夜航' }, chat_id: '10' });
+    assert.equal(f.session.path.at(-1).id, '2');
 });
 
 test('stop before generation ID aborts connection without cancel request', async () => {

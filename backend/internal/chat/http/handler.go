@@ -15,6 +15,7 @@ import (
 
 // Handler 保存会话查询依赖。
 type Handler struct {
+	story  *app.StoryService
 	query  *app.Query
 	recent *app.Recent
 	write  *app.Write
@@ -41,11 +42,13 @@ func New(repo domain.Repo, chars app.CharRepo, remove app.Deleter, logger *zap.L
 func (h *Handler) list(c *gin.Context) {
 	page, size, err := pageArgs(c)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
 	result, err := h.query.List(c.Request.Context(), userID(c), page, size)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
@@ -56,11 +59,13 @@ func (h *Handler) list(c *gin.Context) {
 func (h *Handler) recentList(c *gin.Context) {
 	page, size, err := pageArgs(c)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
 	result, err := h.recent.List(c.Request.Context(), userID(c), page, size)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
@@ -71,11 +76,13 @@ func (h *Handler) recentList(c *gin.Context) {
 func (h *Handler) find(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, app.ErrQuery)
 		return
 	}
 	item, err := h.query.Find(c.Request.Context(), userID(c), id)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
@@ -85,10 +92,27 @@ func (h *Handler) find(c *gin.Context) {
 // create 创建当前用户与角色之间的新会话。
 func (h *Handler) create(c *gin.Context) {
 	var in struct {
+		Mode        string `json:"mode"`
+		VersionID   uint64 `json:"story_version_id,string"`
+		PersonaID   uint64 `json:"persona_id,string"`
+		Key         string `json:"idempotency_key"`
 		CharacterID uint64 `json:"character_id"`
 		Title       string `json:"title"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
+		h.fail(c, app.ErrQuery)
+		return
+	}
+	if in.Mode == "story" {
+		if in.CharacterID != 0 {
+			h.fail(c, app.ErrQuery)
+			return
+		}
+		h.startStory(c, domain.StoryStart{UserID: userID(c), VersionID: in.VersionID, PersonaID: in.PersonaID, Key: in.Key})
+		return
+	}
+	if (in.Mode != "" && in.Mode != "legacy") || in.VersionID != 0 || in.PersonaID != 0 || in.Key != "" {
 		h.fail(c, app.ErrQuery)
 		return
 	}
@@ -96,6 +120,7 @@ func (h *Handler) create(c *gin.Context) {
 		UserID: userID(c), CharacterID: in.CharacterID, Title: in.Title,
 	})
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
@@ -107,10 +132,12 @@ func (h *Handler) create(c *gin.Context) {
 func (h *Handler) remove(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, app.ErrQuery)
 		return
 	}
 	if err := h.write.Delete(c.Request.Context(), userID(c), id); err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
@@ -122,6 +149,7 @@ func (h *Handler) remove(c *gin.Context) {
 func (h *Handler) rename(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, app.ErrQuery)
 		return
 	}
@@ -129,10 +157,12 @@ func (h *Handler) rename(c *gin.Context) {
 		Title string `json:"title"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, app.ErrQuery)
 		return
 	}
 	if err := h.write.Rename(c.Request.Context(), userID(c), id, in.Title); err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
@@ -144,11 +174,13 @@ func (h *Handler) rename(c *gin.Context) {
 func (h *Handler) favorite(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, app.ErrQuery)
 		return
 	}
 	on := c.Request.Method == http.MethodPut
 	if err := h.fav.Set(c.Request.Context(), userID(c), id, on); err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		h.fail(c, err)
 		return
 	}
@@ -167,10 +199,12 @@ func userID(c *gin.Context) uint64 {
 func pageArgs(c *gin.Context) (int, int, error) {
 	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		return 0, 0, app.ErrQuery
 	}
 	size, err := strconv.Atoi(c.DefaultQuery("size", "20"))
 	if err != nil {
+		// audit:allow-no-log HTTP 错误由统一失败处理记录；仓储错误交调用方记录。
 		return 0, 0, app.ErrQuery
 	}
 	if page < 1 || page > 1000000 || size < 1 || size > 100 {
@@ -185,7 +219,9 @@ func (h *Handler) fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, app.ErrIdentity):
 		status, code = http.StatusUnauthorized, "UNAUTHORIZED"
-	case errors.Is(err, app.ErrQuery):
+	case errors.Is(err, domain.ErrStoryConflict):
+		status, code = http.StatusConflict, "IDEMPOTENCY_CONFLICT"
+	case errors.Is(err, app.ErrQuery), errors.Is(err, domain.ErrStoryInput):
 		status, code = http.StatusBadRequest, "INVALID_QUERY"
 	case errors.Is(err, domain.ErrNotFound):
 		status, code = http.StatusNotFound, "NOT_FOUND"

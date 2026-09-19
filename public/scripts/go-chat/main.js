@@ -4,6 +4,10 @@ import { allPages, characterView, preferences, idText } from './data.js';
 import { ChatSession } from './session.js';
 import { $, notice, renderCharacters, renderChats, renderDetail, renderSession, renderRole, showPage } from './view.js';
 import { showCreate, characterBody, resetCreate } from './create.js';
+import { wireSettings, loadBackground, applyBackground, clearSettings } from './settings.js';
+import { wireStories } from './stories.js';
+import { wireRelationship } from './relationship.js';
+import { wireMemoryCandidates } from './memory-candidates.js';
 
 const state = { user: null, prefs: null, session: null, characters: [], chats: [], selected: null, register: false, pending: false };
 
@@ -30,9 +34,15 @@ async function act(action) {
 
 function controls() {
     const busy = state.pending || Boolean(state.session?.busy);
-    for (const selector of ['#auth-submit', '#auth-mode', '#logout', '#library', '#refresh-chats', '#create-character', '#back', '#new-chat', '#delete-chat', '#start-chat', '#branch', '#send', '#message', '#create-submit', '#create-back', '#create-cancel', '#recent-chats', '#favorites-nav']) {
+    for (const selector of ['#auth-submit', '#auth-mode', '#logout', '#library', '#stories-nav', '#refresh-chats', '#create-character', '#back', '#new-chat', '#delete-chat', '#start-chat', '#branch', '#send', '#message', '#suggest-replies', '#create-submit', '#create-back', '#create-cancel', '#recent-chats', '#favorites-nav', '#edit-character', '#delete-character', '#manage-memories', '#relationship-settings', '#memory-candidates', '#background-settings', '#chat-background']) {
         $(selector).disabled = busy;
+        if (['#send', '#message', '#new-chat'].includes(selector) && state.session?.chat && !state.session.character) $(selector).disabled = true;
     }
+    document.querySelectorAll('#background-form input, #background-form button, #memory-form input, #memory-form textarea, #memory-form select, #memory-form button, #memory-list button').forEach(input => { input.disabled = busy; });
+    document.querySelectorAll('#relationship-dialog input, #relationship-dialog textarea, #relationship-dialog select, #relationship-dialog button').forEach(input => { input.disabled = busy; });
+    document.querySelectorAll('#memory-candidate-dialog button').forEach(input => { input.disabled = busy; });
+    document.querySelectorAll('#story-view button, #story-dialog button, #story-dialog select, #story-editor input, #story-editor textarea, #story-editor select, #story-editor button, #persona-dialog input, #persona-dialog textarea, #persona-dialog button').forEach(input => { input.disabled = busy; });
+    document.querySelectorAll('#reply-suggestions button').forEach(button => { button.disabled = busy; });
     $('#create-character-form').querySelectorAll('input,textarea,select').forEach(input => { input.disabled = busy; });
     $('#stop').hidden = !state.session?.active;
     $('#stop').disabled = Boolean(state.session?.active?.stopped);
@@ -68,6 +78,7 @@ function signedOut() {
     state.chats = [];
     state.selected = null;
     resetCreate();
+    clearSettings();
     $('#messages').replaceChildren();
     $('#message').value = '';
     $('#chat-list').replaceChildren();
@@ -113,10 +124,21 @@ async function loadPreviews(chats) {
 
 async function openChat(id) {
     await state.session.open(id);
-    const character = state.characters.find(item => item.id === String(state.session.chat.character_id));
+    const definition = state.session.story?.version?.definition;
+    const cast = definition?.cast?.[0];
+    const character = state.session.chat.mode === 'story' ? {
+        id: cast?.id || 'story-cast', name: cast?.name || state.session.chat.title,
+        description: cast?.description || definition?.hook || '', personality: cast?.personality || '',
+        scenario: definition?.world || '', first_message: '', portrait: cast?.portrait || definition?.cover || '',
+        tags: definition?.tags || [], gender: cast?.gender || '', age: cast?.age || '', message_sample: definition?.examples || '',
+    } : state.characters.find(item => item.id === String(state.session.chat.character_id));
     state.session.character = character;
+    $('#relationship-settings').hidden = !state.session.relationship;
+    $('#role-scope').textContent = state.session.chat.mode === 'story' ? '故事角色' : '我的角色';
+    $('#reply-suggestions').hidden = true;
+    $('#reply-suggestions').replaceChildren();
     renderRole(character);
-    setBackground(state.prefs.get('background', false));
+    await loadBackground();
     renderSession(state.session);
     showPage(true);
     const current = state.chats.find(chat => chat.id === id);
@@ -159,6 +181,8 @@ function confirmDelete(title) {
     return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true }));
 }
 
+wireStories({ act, openChat, refreshChats: loadCatalog, confirmDelete });
+
 $('#auth-form').addEventListener('submit', event => {
     event.preventDefault();
     void act(async () => {
@@ -185,7 +209,7 @@ $('#logout').addEventListener('click', () => void act(async () => {
 }));
 
 $('#library').addEventListener('click', () => void act(async () => { showPage(false); await loadCatalog(); }));
-$('#create-character').addEventListener('click', showCreate);
+$('#create-character').addEventListener('click', () => showCreate());
 $('#create-back').addEventListener('click', () => showPage(false));
 $('#create-cancel').addEventListener('click', () => showPage(false));
 $('#recent-chats').addEventListener('click', () => void act(async () => {
@@ -219,6 +243,8 @@ function showChatRole() {
     state.selected = state.session.character;
     if (!state.selected) return;
     renderDetail(state.selected, state.prefs.get('favorites', []).includes(state.selected.id));
+    const story = state.session.chat?.mode === 'story';
+    for (const selector of ['#edit-character', '#delete-character', '#manage-memories', '#favorite', '#start-chat']) $(selector).hidden = story;
     $('#character-dialog').showModal();
 }
 $('#chat-info').addEventListener('click', showChatRole);
@@ -236,6 +262,7 @@ $('#character-list').addEventListener('click', event => {
     void act(async () => {
         const result = await apiClient.character(button.dataset.character);
         state.selected = characterView(result.character ?? result);
+        for (const selector of ['#edit-character', '#delete-character', '#manage-memories', '#favorite', '#start-chat']) $(selector).hidden = false;
         renderDetail(state.selected, state.prefs.get('favorites', []).includes(state.selected.id));
         $('#character-dialog').showModal();
     });
@@ -256,10 +283,25 @@ $('#create-character-form').addEventListener('submit', event => {
     const form = event.currentTarget;
     try {
         const body = characterBody(form);
-        void act(() => createCharacter(body));
+        void act(async () => {
+            const id = form.dataset.editId;
+            if (!id) { await createCharacter(body); return; }
+            state.selected = characterView(await apiClient.updateCharacter(id, body));
+            resetCreate();
+            await loadCatalog();
+            if (state.session.chat?.character_id === id) {
+                state.session.character = state.selected; renderRole(state.selected); applyBackground();
+            }
+            showPage(false);
+            renderDetail(state.selected, state.prefs.get('favorites', []).includes(id));
+            $('#character-dialog').showModal();
+        });
     } catch (error) { report(error); }
 });
-$('#new-chat').addEventListener('click', () => void act(() => createChat(state.session.chat.character_id, state.session.chat.title)));
+$('#new-chat').addEventListener('click', () => void act(() => {
+    if (state.session.chat.mode === 'story') throw new Error('请从故事详情重新开始一段剧情');
+    return createChat(state.session.chat.character_id, state.session.chat.title);
+}));
 $('#chat-list').addEventListener('click', event => {
     const remove = event.target.closest('[data-delete-chat]');
     if (remove) { void act(() => deleteChat(remove.dataset.deleteChat)); return; }
@@ -284,16 +326,23 @@ async function deleteChat(id) {
 }
 $('#delete-chat').addEventListener('click', () => void act(() => deleteChat(state.session.chat.id)));
 
-/** 背景偏好按账号保存，无封面的角色仍使用纯色背景。 */
-function setBackground(enabled) {
-    $('.chat-column').classList.toggle('picture-background', enabled);
-    $('#chat-background').setAttribute('aria-pressed', String(enabled));
-}
-$('#chat-background').addEventListener('click', () => {
-    const enabled = $('#chat-background').getAttribute('aria-pressed') !== 'true';
-    state.prefs.set('background', enabled);
-    setBackground(enabled);
+wireSettings({ act, selected: () => state.selected, refreshRole: () => renderRole(state.session.character) });
+wireRelationship({ act, session: () => state.session });
+wireMemoryCandidates({ act, session: () => state.session });
+
+$('#edit-character').addEventListener('click', () => {
+    $('#character-dialog').close();
+    showCreate(state.selected);
 });
+$('#delete-character').addEventListener('click', () => void act(async () => {
+    const item = state.selected;
+    if (!await confirmDelete(`删除角色「${item.name}」？聊天历史会保留，但不能继续生成。`)) return;
+    await apiClient.deleteCharacter(item.id);
+    $('#character-dialog').close();
+    state.prefs.set('favorites', state.prefs.get('favorites', []).filter(id => id !== item.id));
+    await loadCatalog();
+    showPage(false);
+}));
 
 $('#branch').addEventListener('change', () => {
     try {
@@ -335,7 +384,14 @@ $('#messages').addEventListener('click', event => {
         if (action === 'select') await state.session.select(id, variant);
         if (action === 'remove' && await confirmDelete('删除这条消息？')) await state.session.remove();
         if (action === 'edit') {
+            $('#edit-form').dataset.mode = 'user';
             $('#edit-content').value = state.session.path.at(-1).content;
+            $('#edit-dialog').showModal();
+        }
+        if (action === 'revise') {
+            $('#edit-form').dataset.mode = 'assistant';
+            $('#edit-content').value = state.session.path.at(-1).content;
+            $('#edit-dialog h2').textContent = '编辑 AI 回复并创建分支';
             $('#edit-dialog').showModal();
         }
     });
@@ -344,9 +400,31 @@ $('#messages').addEventListener('click', event => {
 $('#edit-form').addEventListener('submit', event => {
     event.preventDefault();
     void act(async () => {
-        await state.session.edit($('#edit-content').value);
+        if ($('#edit-form').dataset.mode === 'assistant') await state.session.revise($('#edit-content').value);
+        else await state.session.edit($('#edit-content').value);
         $('#edit-dialog').close();
+        $('#edit-dialog h2').textContent = '编辑消息';
+        delete $('#edit-form').dataset.mode;
     });
+});
+
+$('#suggest-replies').addEventListener('click', () => void act(async () => {
+    const result = await state.session.suggestions();
+    const panel = $('#reply-suggestions');
+    panel.replaceChildren(...result.items.map(text => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = text;
+        return button;
+    }));
+    panel.hidden = false;
+}));
+$('#reply-suggestions').addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    $('#message').value = button.textContent;
+    $('#reply-suggestions').hidden = true;
+    $('#message').focus();
 });
 document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 

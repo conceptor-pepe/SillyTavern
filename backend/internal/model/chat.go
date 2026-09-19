@@ -4,6 +4,7 @@ package model
 // Conversation 保存用户和角色之间的一次聊天会话。
 type Conversation struct {
 	Base
+	Mode        string `gorm:"size:16;not null;default:legacy;index"`
 	UserID      uint64 `gorm:"not null;index"`
 	CharacterID uint64 `gorm:"not null;index"`
 	Title       string `gorm:"size:255;not null"`

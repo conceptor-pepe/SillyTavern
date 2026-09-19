@@ -11,10 +11,11 @@ type Message struct {
 
 // Request 保存兼容 OpenAI Chat Completions 的最小请求。
 type Request struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream"`
-	N        int       `json:"n,omitempty"`
+	Model     string    `json:"model"`
+	Messages  []Message `json:"messages"`
+	Stream    bool      `json:"stream"`
+	N         int       `json:"n,omitempty"`
+	MaxTokens int       `json:"max_tokens,omitempty"`
 }
 
 // Event 表示一次生成中的增量或终止事件。

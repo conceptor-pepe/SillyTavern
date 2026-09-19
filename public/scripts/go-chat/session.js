@@ -6,6 +6,8 @@ export class ChatSession {
     constructor({ api = apiClient, generate = streamGeneration, regenerate = streamRegeneration, prefs, changed = () => {} }) {
         Object.assign(this, { api, generate, regenerate, prefs, changed });
         this.chat = null;
+        this.story = null;
+        this.relationship = null;
         this.messages = [];
         this.leaf = null;
         this.active = null;
@@ -30,8 +32,14 @@ export class ChatSession {
     async open(chatID) {
         return this.work(async () => {
             const chat = await this.api.chat(chatID);
-            const messages = await allPages(query => this.api.messages(chatID, query));
+            const [messages, story, relationship] = await Promise.all([
+                allPages(query => this.api.messages(chatID, query)),
+                chat.mode === 'story' ? this.api.chatBootstrap(chatID) : null,
+                this.api.relationship(chatID).catch(error => error.status === 404 ? null : Promise.reject(error)),
+            ]);
             this.chat = chat;
+            this.story = story;
+            this.relationship = relationship;
             this.messages = messages;
             this.variants.clear();
             this.leaf = this.restoreLeaf();
@@ -172,6 +180,29 @@ export class ChatSession {
             const updated = await this.api.editMessage(item.id, { content });
             this.messages = this.messages.map(message => message.id === item.id ? updated : message);
         });
+    }
+
+    /** AI 回复编辑保存为同父节点分支，原回复仍可通过分支选择恢复。 */
+    async revise(content) {
+        const item = this.path.at(-1);
+        this.checkLeaf(item);
+        if (item.role !== 'assistant') throw new Error('只能改写 AI 回复');
+        if (!content.trim()) throw new Error('回复不能为空');
+        return this.work(async () => {
+            const revised = await this.api.reviseAssistant(item.id, { content: content.trim() });
+            this.messages.push(revised);
+            this.setLeaf(revised.id);
+        });
+    }
+
+    /** 建议以当前 AI 叶节点为锚点，不进入正式聊天历史。 */
+    async suggestions(model = '') {
+        const item = this.path.at(-1);
+        if (!item || item.role !== 'assistant') throw new Error('请等待 AI 回复后再获取建议');
+        this.checkLeaf(item);
+        const body = { parent_id: item.id };
+        if (model) body.model = model;
+        return this.work(() => this.api.replySuggestions(this.chat.id, body));
     }
 
     async remove() {

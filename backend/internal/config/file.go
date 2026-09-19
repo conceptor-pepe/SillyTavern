@@ -16,12 +16,12 @@ func LoadFile(name string) (Config, error) {
 		return cfg, nil
 	}
 	data, err := os.ReadFile(name)
-	if err != nil {
+	if err != nil { // audit:allow-no-log startup logs the returned configuration error.
 		return cfg, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&cfg); err != nil {
+	if err := decoder.Decode(&cfg); err != nil { // audit:allow-no-log startup logs the sanitized configuration error.
 		return cfg, errors.New("invalid config JSON")
 	}
 	if err := decoder.Decode(new(json.RawMessage)); err != io.EOF {
@@ -37,6 +37,12 @@ func (c Config) Check() error {
 	}
 	if (c.TLSCert == "") != (c.TLSKey == "") {
 		return errors.New("TLS certificate and key must be paired")
+	}
+	if (c.ContextBudget != 0 && c.ContextBudget < 6000) || c.ContextBudget > 1000000 || c.OutputTokens < 0 || c.OutputTokens > 100000 {
+		return errors.New("invalid context or output budget")
+	}
+	if (c.EmbeddingURL == "") != (c.EmbeddingModel == "") {
+		return errors.New("embedding URL and model must be paired")
 	}
 	return nil
 }

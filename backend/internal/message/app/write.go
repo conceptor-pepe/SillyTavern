@@ -7,19 +7,36 @@ import (
 	"strings"
 
 	"ai-chat/backend/internal/message/domain"
+	"go.uber.org/zap"
 )
 
 // Write 保存消息写入依赖。
 type Write struct {
 	messages domain.Repo
 	mutator  domain.Mutator
+	reviser  domain.AssistantReviser
 	chats    domain.ChatRepo
+	logger   *zap.Logger
 }
 
 // NewWrite 创建消息写入用例。
-func NewWrite(messages domain.Repo, chats domain.ChatRepo) *Write {
+func NewWrite(messages domain.Repo, chats domain.ChatRepo, loggers ...*zap.Logger) *Write {
 	mutator, _ := messages.(domain.Mutator)
-	return &Write{messages: messages, mutator: mutator, chats: chats}
+	reviser, _ := messages.(domain.AssistantReviser)
+	logger := zap.NewNop()
+	if len(loggers) > 0 && loggers[0] != nil {
+		logger = loggers[0]
+	}
+	return &Write{messages: messages, mutator: mutator, reviser: reviser, chats: chats, logger: logger}
+}
+
+// ReviseAssistant 创建 AI 回复的编辑分支，原回复及其后续历史保持不变。
+func (w *Write) ReviseAssistant(ctx context.Context, uid, messageID uint64, content string) (domain.Message, error) {
+	content = strings.TrimSpace(content)
+	if w.reviser == nil || uid == 0 || messageID == 0 || content == "" {
+		return domain.Message{}, ErrQuery
+	}
+	return w.reviser.ReviseAssistant(ctx, uid, messageID, content)
 }
 
 // Edit 修改当前用户的用户消息，AI 消息和空内容不能被编辑。
@@ -55,12 +72,19 @@ func (w *Write) Create(ctx context.Context, uid, chatID uint64, item domain.Mess
 			return domain.Message{}, errors.New("parent checker unavailable")
 		}
 		owned, err := checker.OwnsInChat(ctx, uid, chatID, *item.ParentID)
-		if err != nil || !owned {
+		if err != nil {
+			w.logger.Error("message parent query failed", zap.Uint64("user_id", uid),
+				zap.Uint64("chat_id", chatID), zap.Uint64("parent_id", *item.ParentID), zap.Error(err))
+			return domain.Message{}, err
+		}
+		if !owned {
 			return domain.Message{}, ErrQuery
 		}
 	}
 	owned, err := w.chats.Owns(ctx, uid, chatID)
 	if err != nil {
+		w.logger.Error("message chat query failed", zap.Uint64("user_id", uid),
+			zap.Uint64("chat_id", chatID), zap.Error(err))
 		return domain.Message{}, err
 	}
 	if !owned {

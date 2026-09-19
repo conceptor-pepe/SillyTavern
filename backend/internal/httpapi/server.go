@@ -13,15 +13,26 @@ import (
 	chatapp "ai-chat/backend/internal/chat/app"
 	chathttp "ai-chat/backend/internal/chat/http"
 	chatinfra "ai-chat/backend/internal/chat/infra"
+	"ai-chat/backend/internal/chatcontext"
 	"ai-chat/backend/internal/config"
 	"ai-chat/backend/internal/db"
 	genapp "ai-chat/backend/internal/generation/app"
 	gendomain "ai-chat/backend/internal/generation/domain"
 	genhttp "ai-chat/backend/internal/generation/http"
 	geninfra "ai-chat/backend/internal/generation/infra"
+	"ai-chat/backend/internal/logx"
+	memapp "ai-chat/backend/internal/memory/app"
+	memdomain "ai-chat/backend/internal/memory/domain"
+	memhttp "ai-chat/backend/internal/memory/http"
+	meminfra "ai-chat/backend/internal/memory/infra"
 	msghttp "ai-chat/backend/internal/message/http"
 	msginfra "ai-chat/backend/internal/message/infra"
+	prefhttp "ai-chat/backend/internal/preference/http"
+	prefinfra "ai-chat/backend/internal/preference/infra"
 	providerinfra "ai-chat/backend/internal/provider/infra"
+	relapp "ai-chat/backend/internal/relationship/app"
+	relhttp "ai-chat/backend/internal/relationship/http"
+	relinfra "ai-chat/backend/internal/relationship/infra"
 	userhttp "ai-chat/backend/internal/user/http"
 	userinfra "ai-chat/backend/internal/user/infra"
 	"ai-chat/backend/internal/webui"
@@ -62,6 +73,7 @@ func New(cfg config.Config, logger *zap.Logger) (*Server, error) {
 		},
 	}
 	if err := server.connect(cfg, engine, logger); err != nil {
+		zap.L().Error("server infrastructure failed", zap.Error(logx.SafeError(err)))
 		drain.stop()
 		return nil, errors.Join(err, server.closeClients())
 	}
@@ -73,6 +85,7 @@ func (s *Server) connect(cfg config.Config, engine *gin.Engine, logger *zap.Logg
 	if cfg.RedisAddr != "" {
 		client, err := db.OpenRedis(context.Background(), cfg.RedisAddr, cfg.RedisPass, cfg.RedisDB)
 		if err != nil {
+			zap.L().Error("server infrastructure failed", zap.Error(logx.SafeError(err)))
 			return err
 		}
 		s.redis = client
@@ -81,18 +94,24 @@ func (s *Server) connect(cfg config.Config, engine *gin.Engine, logger *zap.Logg
 	if cfg.MySQLDSN != "" {
 		conn, err := openDB(cfg, logger)
 		if err != nil {
+			zap.L().Error("server infrastructure failed", zap.Error(logx.SafeError(err)))
 			return err
 		}
 		s.sql = conn
 		registerModules(engine, conn, cfg, logger)
+		memory := memoryService(conn, cfg, logger)
+		memhttp.New(memory).Routes(engine, RequireAuth(cfg.AuthSecret))
+		prefhttp.New(prefinfra.New(conn), logger).Routes(engine, RequireAuth(cfg.AuthSecret))
+		relhttp.New(relapp.New(relinfra.New(conn), logger)).Routes(engine, RequireAuth(cfg.AuthSecret))
 		gate := chatinfra.NewGate(conn)
 		tasks := genapp.New(geninfra.NewRepo(conn, gate))
 		if cfg.ProviderURL != "" {
 			provider := &providerinfra.OpenAI{URL: cfg.ProviderURL, Key: cfg.ProviderKey}
 			runner := genapp.NewRunner(tasks, provider, geninfra.NewDoneWriter(conn, gate))
 			genhttp.New(tasks, runner, genhttp.Deps{
-				DefaultModel: cfg.ProviderModel,
-				Chats:        chatinfra.NewRepo(conn), Chars: charinfra.NewRepo(conn), Msgs: msginfra.NewRepo(conn),
+				Story:        chatcontext.New(chatinfra.NewStory(conn), memory, logger),
+				DefaultModel: cfg.ProviderModel, Memory: memory, Suggester: genapp.NewSuggester(provider, logger), OutputTokens: cfg.OutputTokens,
+				Chats: chatinfra.NewRepo(conn), Chars: charinfra.NewRepo(conn), Msgs: msginfra.NewRepo(conn),
 			}, logger).Routes(engine, RequireAuth(cfg.AuthSecret))
 			logger.Info("provider ready", zap.String("model", cfg.ProviderModel),
 				zap.String("provider", "openai"))
@@ -119,7 +138,10 @@ func registerModules(engine *gin.Engine, conn *gorm.DB, cfg config.Config, logge
 	gate := chatinfra.NewGate(conn)
 	tasks := genapp.New(geninfra.NewRepo(conn, gate))
 	remove := chatapp.NewRemover(chats, gate, tasks)
-	chathttp.New(chats, charinfra.NewRepo(conn), remove, logger, chats).Routes(engine, auth)
+	handler := chathttp.New(chats, charinfra.NewRepo(conn), remove, logger, chats)
+	handler.UseStory(chatapp.NewStory(chatinfra.NewStory(conn), logger))
+	handler.Routes(engine, auth)
+	registerStory(engine, conn, auth, logger)
 	msghttp.New(msginfra.NewRepo(conn), chatinfra.NewRepo(conn), logger).Routes(engine, auth)
 }
 
@@ -127,9 +149,11 @@ func registerModules(engine *gin.Engine, conn *gorm.DB, cfg config.Config, logge
 func openDB(cfg config.Config, logger *zap.Logger) (*gorm.DB, error) {
 	conn, err := db.OpenMySQL(context.Background(), cfg.MySQLDSN, logger)
 	if err != nil {
+		zap.L().Error("server infrastructure failed", zap.Error(logx.SafeError(err)))
 		return nil, err
 	}
 	if err := db.Migrate(context.Background(), conn); err != nil {
+		zap.L().Error("server infrastructure failed", zap.Error(logx.SafeError(err)))
 		return nil, closeDB(conn, err)
 	}
 	return conn, nil
@@ -139,6 +163,7 @@ func openDB(cfg config.Config, logger *zap.Logger) (*gorm.DB, error) {
 func closeDB(conn *gorm.DB, cause error) error {
 	sqlDB, err := conn.DB()
 	if err != nil {
+		zap.L().Error("server infrastructure failed", zap.Error(logx.SafeError(err)))
 		return errors.Join(cause, err)
 	}
 	return errors.Join(cause, sqlDB.Close())
@@ -174,6 +199,7 @@ func (s *Server) Stop(ctx context.Context) error {
 		err = nil
 	}
 	if err != nil || cleanErr != nil || drainErr != nil {
+		zap.L().Error("server infrastructure failed", zap.Error(logx.SafeError(err)))
 		return errors.Join(err, cleanErr, drainErr)
 	}
 	return s.closeClients()
@@ -195,4 +221,21 @@ func (s *Server) releaseClients() error {
 		err = errors.Join(err, s.redis.Close())
 	}
 	return err
+}
+
+// memoryService 根据服务器配置装配摘要与可选向量能力。
+func memoryService(conn *gorm.DB, cfg config.Config, logger *zap.Logger) *memapp.Service {
+	var embed memdomain.Embedder
+	if cfg.EmbeddingURL != "" && cfg.EmbeddingModel != "" {
+		embed = &meminfra.Embedder{URL: cfg.EmbeddingURL, Key: cfg.EmbeddingKey, ModelName: cfg.EmbeddingModel}
+	}
+	var summary memdomain.Summarizer
+	var extractor memdomain.CandidateExtractor
+	if cfg.ProviderURL != "" {
+		provider := &providerinfra.OpenAI{URL: cfg.ProviderURL, Key: cfg.ProviderKey}
+		summary = &meminfra.Summarizer{Provider: provider, Model: cfg.ProviderModel}
+		extractor = &meminfra.Extractor{Provider: provider, Model: cfg.ProviderModel}
+	}
+	return memapp.New(meminfra.NewRepo(conn), msginfra.NewRepo(conn), logger,
+		memapp.Options{Summary: summary, Embed: embed, Extract: extractor, Budget: cfg.ContextBudget})
 }

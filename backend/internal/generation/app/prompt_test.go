@@ -2,6 +2,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	character "ai-chat/backend/internal/character/domain"
@@ -31,5 +32,15 @@ func TestBuildPromptEmpty(t *testing.T) {
 	got := BuildPrompt(PromptArgs{History: []msgdomain.Message{{Role: "user", Content: "hi"}}})
 	if len(got) != 1 || got[0].Role != "user" {
 		t.Fatalf("unexpected prompt: %#v", got)
+	}
+}
+
+// TestProfilePrompt 编辑后的年龄、性别和示例对话必须进入实际提示词。
+func TestProfilePrompt(t *testing.T) {
+	got := BuildPrompt(PromptArgs{Character: character.Character{Name: "小满", Gender: "female", Age: "24", MessageSample: "你：你好。角色：欢迎回来。", Scenario: "雨夜书店"}})
+	for _, text := range []string{"性别：female", "年龄：24", "雨夜书店", "欢迎回来", "并非已发生的对话"} {
+		if !strings.Contains(got[0].Content, text) {
+			t.Fatalf("missing %q", text)
+		}
 	}
 }

@@ -34,10 +34,13 @@ func BuildPrompt(args PromptArgs) []provider.Message {
 func roleText(item character.Character) string {
 	parts := make([]string, 0, 5)
 	addPart(&parts, "角色", item.Name)
+	addPart(&parts, "性别", item.Gender)
+	addPart(&parts, "年龄", item.Age)
 	addPart(&parts, "描述", item.Description)
 	addPart(&parts, "性格", item.Personality)
 	addPart(&parts, "场景", item.Scenario)
 	addPart(&parts, "开场白", item.FirstMessage)
+	addPart(&parts, "示例对话（仅示范说话风格，并非已发生的对话）", item.MessageSample)
 	return strings.Join(parts, "\n")
 }
 

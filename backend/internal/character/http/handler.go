@@ -31,6 +31,8 @@ func (h *Handler) Routes(engine *gin.Engine, auth gin.HandlerFunc) {
 	engine.GET("/api/characters", auth, h.list)
 	engine.GET("/api/characters/:id", auth, h.find)
 	engine.POST("/api/v1/characters", auth, h.createChar)
+	engine.PUT("/api/v1/characters/:id", auth, h.updateChar)
+	engine.DELETE("/api/v1/characters/:id", auth, h.deleteChar)
 	engine.GET("/api/v1/characters", auth, h.list)
 	engine.GET("/api/v1/characters/:id", auth, h.find)
 }
@@ -38,18 +40,7 @@ func (h *Handler) Routes(engine *gin.Engine, auth gin.HandlerFunc) {
 // createChar 创建当前用户拥有的角色。
 func (h *Handler) createChar(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
-	var in struct {
-		Name          string   `json:"name"`
-		Description   string   `json:"description"`
-		Personality   string   `json:"personality"`
-		Scenario      string   `json:"scenario"`
-		FirstMessage  string   `json:"first_message"`
-		Portrait      string   `json:"portrait"`
-		Tags          []string `json:"tags"`
-		Gender        string   `json:"gender"`
-		Age           string   `json:"age"`
-		MessageSample string   `json:"message_sample"`
-	}
+	var in characterInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		h.logger.Warn("character input invalid", zap.Uint64("user_id", contextID(c)), zap.Error(err))
 		reply.Fail(c, http.StatusBadRequest, "INVALID_INPUT", "角色资料无效")

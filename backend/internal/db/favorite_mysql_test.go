@@ -79,7 +79,7 @@ func checkFavoriteRows(t *testing.T, conn *gorm.DB) {
 func checkChange(t *testing.T, conn *gorm.DB, state string) {
 	t.Helper()
 	var rows []schemaChange
-	if err := conn.Find(&rows).Error; err != nil || len(rows) != 1 {
+	if err := conn.Where("version = ?", favoriteVersion).Find(&rows).Error; err != nil || len(rows) != 1 {
 		t.Fatalf("changes=%+v err=%v", rows, err)
 	}
 	if rows[0].Version != favoriteVersion || rows[0].State != state || rows[0].Digest == "" {

@@ -1,12 +1,25 @@
 /** 角色创建页负责表单预览和图片压缩；创建请求仍由入口统一处理。 */
 import { $, element, notice } from './view.js';
+import { createWizard, wireChoiceFields } from './wizard.js';
 
 let imageData = '';
 let imageBusy = false;
 
 /** 切换为独立创建页，未提交内容仅保留在当前表单。 */
-export function showCreate() {
+export function showCreate(item = null) {
+    resetCreate();
+    if (item?.id) {
+        const form = $('#create-character-form');
+        form.dataset.editId = item.id;
+        for (const key of ['name','gender','age','description','personality','scenario','first_message','message_sample']) form.elements[key].value = item[key] || '';
+        form.elements.tags.value = (item.tags || []).join('，');
+        form.elements.tags.dispatchEvent(new Event('input', { bubbles: true }));
+        imageData = item.portrait || '';
+        $('.create-heading h1').textContent = '编辑角色';
+        $('#create-submit').textContent = '保存角色';
+    }
     $('#library-view').hidden = true;
+    $('#story-view').hidden = true;
     $('#chat-view').hidden = true;
     $('#create-view').hidden = false;
     document.body.classList.remove('in-chat');
@@ -29,7 +42,11 @@ export function characterBody(form) {
 /** 成功创建或退出账号时清除临时资料，避免跨账号残留。 */
 export function resetCreate() {
     $('#create-character-form').reset();
+    delete $('#create-character-form').dataset.editId;
+    $('.create-heading h1').textContent = '创建角色';
+    $('#create-submit').textContent = '创建并聊天';
     imageData = '';
+    characterWizard.reset();
     updatePreview();
 }
 
@@ -44,14 +61,23 @@ function updatePreview() {
     for (const id of ['#upload-preview', '#preview-image', '#preview-chat-image']) $(id).src = imageData || '/img/ai4.png';
     const tags = form.elements.tags.value.split(/[,，、]/).map(tag => tag.trim()).filter(Boolean).slice(0, 9);
     $('#preview-tags').replaceChildren(...tags.map(tag => element('span', tag, 'tag')));
+    const summary = $('#character-review-summary');
+    const row = (label, value) => [element('dt', label), element('dd', value || '未填写')];
+    summary.replaceChildren(
+        ...row('角色', [name, form.elements.gender.selectedOptions[0]?.text, form.elements.age.value].filter(Boolean).join(' · ')),
+        ...row('性格', form.elements.personality.value),
+        ...row('相遇', form.elements.scenario.value),
+        ...row('开场', form.elements.first_message.value),
+        ...row('标签', tags.join('、')),
+    );
 }
 
 /** 浏览器重绘缩略图去除元数据，并限制请求体大小。 */
-async function readPortrait(file) {
+export async function readPortrait(file, maxSize = 512) {
     if (!file) return '';
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) throw new Error('请选择 5 MB 以内的 JPG、PNG 或 WebP 图片');
     const image = await createImageBitmap(file);
-    const scale = Math.min(1, 512 / Math.max(image.width, image.height));
+    const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(image.width * scale));
     canvas.height = Math.max(1, Math.round(image.height * scale));
@@ -66,6 +92,13 @@ async function readPortrait(file) {
 }
 
 $('#create-character-form').addEventListener('input', updatePreview);
+const characterWizard = createWizard($('#create-character-form'), {
+    changed(index) {
+        $('.create-layout').classList.toggle('is-reviewing', index === 3);
+        updatePreview();
+    },
+});
+wireChoiceFields($('#create-character-form'));
 $('#portrait-file').addEventListener('change', async event => {
     imageBusy = true;
     $('#create-submit').disabled = true;

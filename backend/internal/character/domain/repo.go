@@ -9,6 +9,9 @@ import (
 // ErrInvalid 表示角色资料不符合业务规则。
 var ErrInvalid = errors.New("invalid character")
 
+// ErrNotFound 隐藏不存在、已删除与其他用户的角色。
+var ErrNotFound = errors.New("character not found")
+
 // Character 表示可供用户使用的角色资料。
 type Character struct {
 	ID            uint64
@@ -35,4 +38,10 @@ type Repo interface {
 // CreatorRepo 提供角色创建能力。
 type CreatorRepo interface {
 	Create(ctx context.Context, item Character) (Character, error)
+}
+
+// EditorRepo 限制编辑操作在当前账号角色范围内。
+type EditorRepo interface {
+	Update(ctx context.Context, item Character) (Character, error)
+	Delete(ctx context.Context, uid, id uint64) error
 }
