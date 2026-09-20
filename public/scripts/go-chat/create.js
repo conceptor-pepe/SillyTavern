@@ -61,15 +61,6 @@ function updatePreview() {
     for (const id of ['#upload-preview', '#preview-image', '#preview-chat-image']) $(id).src = imageData || '/img/ai4.png';
     const tags = form.elements.tags.value.split(/[,，、]/).map(tag => tag.trim()).filter(Boolean).slice(0, 9);
     $('#preview-tags').replaceChildren(...tags.map(tag => element('span', tag, 'tag')));
-    const summary = $('#character-review-summary');
-    const row = (label, value) => [element('dt', label), element('dd', value || '未填写')];
-    summary.replaceChildren(
-        ...row('角色', [name, form.elements.gender.selectedOptions[0]?.text, form.elements.age.value].filter(Boolean).join(' · ')),
-        ...row('性格', form.elements.personality.value),
-        ...row('相遇', form.elements.scenario.value),
-        ...row('开场', form.elements.first_message.value),
-        ...row('标签', tags.join('、')),
-    );
 }
 
 /** 浏览器重绘缩略图去除元数据，并限制请求体大小。 */
@@ -94,7 +85,7 @@ export async function readPortrait(file, maxSize = 512) {
 $('#create-character-form').addEventListener('input', updatePreview);
 const characterWizard = createWizard($('#create-character-form'), {
     changed(index) {
-        $('.create-layout').classList.toggle('is-reviewing', index === 3);
+        $('.create-layout').classList.toggle('is-reviewing', index === 2);
         updatePreview();
     },
 });

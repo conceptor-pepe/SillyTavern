@@ -158,6 +158,9 @@ h3 { font-size:13px; }
 input::file-selector-button { border:1px solid var(--line); border-radius:4px; background:#fff; padding:7px; color:var(--accent); cursor:pointer; }
 .form-section details summary { cursor:pointer; margin-bottom:12px; }
 .form-section details textarea { width:100%; }
+.optional-section { padding:12px 14px; border:1px solid var(--line); border-radius:7px; background:#faf9fc; }
+.optional-section summary { color:var(--muted); font-size:12px; }
+.optional-section[open] summary { color:var(--accent); }
 .create-footer { position:sticky; bottom:0; z-index:4; padding:14px 28px; display:flex; justify-content:flex-end; align-items:center; gap:10px; background:#fffffff2; backdrop-filter:blur(12px); border-top:1px solid var(--line); }
 .wizard-status { margin-right:auto; color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
 .create-preview { border-left:1px solid var(--line); padding:24px; overflow-y:auto; background:#faf9fc; }

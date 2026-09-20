@@ -97,29 +97,27 @@
             <div class="create-layout">
               <form id="create-character-form">
                 <nav class="wizard-progress" aria-label="角色创建步骤">
-                  <button type="button" data-wizard-target="0"><span>1</span><strong>档案</strong></button>
-                  <button type="button" data-wizard-target="1"><span>2</span><strong>设定</strong></button>
+                  <button type="button" data-wizard-target="0"><span>1</span><strong>形象</strong></button>
+                  <button type="button" data-wizard-target="1"><span>2</span><strong>性格</strong></button>
                   <button type="button" data-wizard-target="2"><span>3</span><strong>开场</strong></button>
-                  <button type="button" data-wizard-target="3"><span>4</span><strong>确认</strong></button>
                 </nav>
-                <section class="form-section wizard-panel" data-wizard-step="0"><span class="step-label">第一步 · 先让她有一个清晰的形象</span><h2>角色档案</h2><p class="section-copy">只填写最容易决定的资料，之后还能随时修改。</p>
+                <section class="form-section wizard-panel" data-wizard-step="0"><span class="step-label">第一步 · 她是谁</span><h2>名字与形象</h2><p class="section-copy">填写名字和一句介绍就能继续，其他资料以后也能补充。</p>
                   <label class="upload-field"><img id="upload-preview" src="/img/ai4.png" alt="角色封面预览"><span><strong>角色封面</strong><span class="upload-caption">JPG / PNG / WebP · 最大 5 MB</span><input id="portrait-file" type="file" accept="image/jpeg,image/png,image/webp"></span></label>
-                  <label>名称 <span class="required">*</span><input name="name" required maxlength="128" placeholder="角色的名字"></label>
-                  <div class="field-row"><label>性别<select name="gender"><option value="">未设置</option><option value="female">女性</option><option value="male">男性</option><option value="other">非二元</option></select></label><label>年龄<input name="age" maxlength="8" placeholder="角色的年龄"></label></div>
-                  <label>简介<textarea name="description" rows="3" maxlength="10000" placeholder="一句话介绍你的角色"></textarea></label>
+                  <label>名称 <span class="required">*</span><input name="name" required maxlength="128" placeholder="给她取一个名字"></label>
+                  <label>一句话介绍<textarea name="description" rows="2" maxlength="10000" placeholder="例如：住在隔壁、温柔但有点嘴硬的女孩"></textarea></label>
+                  <details class="optional-section"><summary>补充年龄和性别（可选）</summary><div class="field-row"><label>性别<select name="gender"><option value="">不设置</option><option value="female">女性</option><option value="male">男性</option><option value="other">非二元</option></select></label><label>年龄<input name="age" maxlength="8" placeholder="例如：24"></label></div></details>
                 </section>
-                <section class="form-section wizard-panel" data-wizard-step="1" hidden><span class="step-label">第二步 · 决定她是谁</span><h2>性格与关系</h2><p class="section-copy">描述她的行为方式和你们相遇的背景，模型会优先遵守这里的设定。</p>
-                  <label>性格与背景<textarea name="personality" rows="5" maxlength="10000" placeholder="性格、经历、说话方式与喜好"></textarea></label>
-                  <label>相遇场景<textarea name="scenario" rows="3" maxlength="10000" placeholder="故事发生的地点与背景"></textarea></label>
-                  <div class="choice-field"><span>快速选择标签</span><div class="choice-chips" data-choice-name="tags"><button type="button" data-choice-value="温柔">温柔</button><button type="button" data-choice-value="傲娇">傲娇</button><button type="button" data-choice-value="治愈">治愈</button><button type="button" data-choice-value="日常">日常</button><button type="button" data-choice-value="幻想">幻想</button><button type="button" data-choice-value="冒险">冒险</button></div></div>
-                  <label>角色标签（最多 9 个）<input name="tags" maxlength="224" placeholder="也可以自己输入，用逗号分隔"></label>
+                <section class="form-section wizard-panel" data-wizard-step="1" hidden><span class="step-label">第二步 · 她是什么样的人</span><h2>性格与关系</h2><p class="section-copy">先点几个符合她的词，再用一两句话补充。</p>
+                  <div class="choice-field"><span>选择性格</span><div class="choice-chips" data-choice-name="tags"><button type="button" data-choice-value="温柔">温柔</button><button type="button" data-choice-value="傲娇">傲娇</button><button type="button" data-choice-value="治愈">治愈</button><button type="button" data-choice-value="活泼">活泼</button><button type="button" data-choice-value="高冷">高冷</button><button type="button" data-choice-value="神秘">神秘</button></div></div>
+                  <label>性格补充<textarea name="personality" rows="4" maxlength="10000" placeholder="例如：表面嘴硬，实际上很关心我；说话简短自然"></textarea></label>
+                  <label>你们是什么关系？<textarea name="scenario" rows="3" maxlength="10000" placeholder="例如：青梅竹马、同事，或刚刚认识"></textarea></label>
+                  <details class="optional-section"><summary>添加更多标签（可选）</summary><label><span class="sr-only">更多角色标签</span><input name="tags" maxlength="224" placeholder="用逗号分隔，最多 9 个"></label></details>
                 </section>
-                <section class="form-section wizard-panel" data-wizard-step="2" hidden><span class="step-label">第三步 · 设计第一次见面</span><h2>开场与说话方式</h2><p class="section-copy">一段具体的开场比抽象描述更容易让角色进入状态。</p>
-                  <label>开场白<textarea name="first_message" rows="5" maxlength="10000" placeholder="你们相遇时，角色说的第一句话"></textarea></label>
-                  <details><summary>示例对话</summary><label><span class="sr-only">示例对话</span><textarea name="message_sample" rows="4" maxlength="10000" placeholder="你：你好。&#10;角色：很高兴见到你。"></textarea></label></details>
+                <section class="form-section wizard-panel" data-wizard-step="2" hidden><span class="step-label">第三步 · 她先说什么</span><h2>第一次见面</h2><p class="section-copy">写一句开场白，创建后就可以直接开始聊天。</p>
+                  <label>开场白<textarea name="first_message" rows="5" maxlength="10000" placeholder="例如：你终于来了，我等你好久了。"></textarea></label>
+                  <details class="optional-section"><summary>添加示例对话（可选）</summary><label><span class="sr-only">示例对话</span><textarea name="message_sample" rows="4" maxlength="10000" placeholder="你：今天过得怎么样？&#10;角色：还不错，就是有点想你。"></textarea></label></details>
                 </section>
-                <section class="form-section wizard-panel review-panel" data-wizard-step="3" hidden><span class="step-label">第四步 · 创建前再看一眼</span><h2>确认角色</h2><p class="section-copy">角色创建后仍能编辑。长期记忆会在聊天中由你确认后保存。</p><dl id="character-review-summary" class="review-summary"></dl></section>
-                <footer class="create-footer"><span class="wizard-status" data-wizard-status>1 / 4</span><button type="button" id="create-cancel">取消</button><button type="button" data-wizard-previous hidden>上一步</button><button class="primary" type="button" data-wizard-next>下一步</button><button class="primary" id="create-submit" data-wizard-submit type="submit" hidden><i class="fa-solid fa-comment" aria-hidden="true"></i> 创建并聊天</button></footer>
+                <footer class="create-footer"><span class="wizard-status" data-wizard-status>1 / 3</span><button type="button" id="create-cancel">取消</button><button type="button" data-wizard-previous hidden>上一步</button><button class="primary" type="button" data-wizard-next>下一步</button><button class="primary" id="create-submit" data-wizard-submit type="submit" hidden><i class="fa-solid fa-comment" aria-hidden="true"></i> 创建并聊天</button></footer>
               </form>
               <aside class="create-preview"><header><h2>预览</h2><div class="preview-tabs"><button type="button" data-preview="card" aria-pressed="true">角色卡</button><button type="button" data-preview="chat" aria-pressed="false">聊天</button></div></header><article id="preview-card" class="preview-card"><img id="preview-image" src="/img/ai4.png" alt=""><div><h2 id="preview-name">角色名称</h2><p id="preview-description">角色简介</p><div id="preview-tags" class="tags"></div><span class="private-label">仅自己可见</span></div></article><div id="preview-chat" class="preview-chat" hidden><img id="preview-chat-image" src="/img/ai4.png" alt=""><h2 id="preview-chat-name">角色名称</h2><p id="preview-greeting">开场白</p></div></aside>
             </div>

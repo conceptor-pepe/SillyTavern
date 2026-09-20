@@ -285,12 +285,12 @@ try {
     await page.locator('#create-character-form [data-wizard-next]').click();
     await page.locator('#create-character-form [data-choice-value="温柔"]').click();
     assert.equal(await page.locator('#create-view [name=tags]').inputValue(), '温柔');
+    await page.locator('#create-character-form [data-wizard-step="1"] details summary').click();
     await page.locator('#create-view [name=tags]').fill('日常，书店');
     await page.locator('#create-character-form [data-wizard-next]').click();
     await page.locator('#create-view [name=first_message]').fill('欢迎，今天想读些什么？');
-    await page.locator('#create-character-form [data-wizard-next]').click();
-    assert.equal(await page.locator('#create-character-form').getAttribute('data-wizard-current'), '3');
-    await page.locator('#character-review-summary').scrollIntoViewIfNeeded();
+    assert.equal(await page.locator('#create-character-form').getAttribute('data-wizard-current'), '2');
+    await page.locator('#create-view [name=first_message]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${artifacts}/create.png`, fullPage: true });
     await page.locator('[data-preview=chat]').click();
     assert.equal(await page.locator('#preview-greeting').textContent(), '欢迎，今天想读些什么？');
@@ -307,9 +307,8 @@ try {
     await page.locator('#create-view [name=name]').fill('夜间书店');
     await page.locator('#create-character-form [data-wizard-next]').click();
     await page.locator('#create-character-form [data-wizard-next]').click();
-    await page.locator('#create-view details summary').click();
+    await page.locator('#create-character-form [data-wizard-step="2"] details summary').click();
     await page.locator('#create-view [name=message_sample]').fill('你：晚安。角色：梦里见。');
-    await page.locator('#create-character-form [data-wizard-next]').click();
     await page.locator('#create-submit').click();
     await page.locator('#detail-name').filter({ hasText: '夜间书店' }).waitFor();
     await page.locator('#manage-memories').click();
